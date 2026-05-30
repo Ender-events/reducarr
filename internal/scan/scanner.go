@@ -36,6 +36,7 @@ func (s *Scanner) Run(ctx context.Context) error {
 	for i, instance := range s.Client.Sonarr {
 		if err := s.scanSonarr(ctx, i, instance); err != nil {
 			if ctx.Err() != nil {
+				s.printSummary()
 				return nil
 			}
 			return err
@@ -154,21 +155,47 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 
 			isCand, reason := s.Scorer.IsCandidate(info)
 			relPath := getString(file.RelativePath)
+			absPath := getString(file.Path)
 			sizeStr := humanize.Bytes(uint64(info.Size))
+
+			// Get Inode for cache
+			inode, _ := fsutil.GetInode(absPath)
+
+			// Update Media Cache
+			quality := ""
+			if file.Quality != nil && file.Quality.Quality != nil {
+				quality = getString(file.Quality.Quality.Name)
+			}
+
+			err = s.DB.UpsertMediaFile(db.MediaFileRecord{
+				ArrInstance: inst.Name(),
+				ArrType:     "sonarr",
+				ItemID:      *series.Id,
+				FileID:      *file.Id,
+				Path:        absPath,
+				Inode:       inode,
+				Size:        info.Size,
+				Duration:    int64(duration),
+				Quality:     quality,
+			})
+			if err != nil {
+				return fmt.Errorf("upsert media file: %w", err)
+			}
 
 			s.TotalScanned++
 			if isCand {
 				s.TotalCandidate++
 
 				// Check for cross-seeds
-				path := getString(file.Path)
-				inode, _ := fsutil.GetInode(path)
 				records, _ := s.DB.GetTorrentsByInode(inode)
 
 				crossSeedInfo := ""
 				if len(records) > 1 {
 					crossSeedInfo = fmt.Sprintf(" [CROSS-SEED: %d clients/torrents]", len(records))
 				}
+
+				// Save Candidate
+				_ = s.DB.UpsertCandidate(inst.Name(), *file.Id, reason)
 
 				s.UI.LogPermanent(fmt.Sprintf("\033[31m✘\033[0m [%s: %s] %s - %s (%s) - %s%s", "Sonarr", inst.Name(), title, relPath, sizeStr, reason, crossSeedInfo))
 			} else {
@@ -246,6 +273,30 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 				Duration: duration,
 			}
 
+			absPath := getStringRadarr(movie.MovieFile.Path)
+			inode, _ := fsutil.GetInode(absPath)
+
+			// Update Media Cache
+			quality := ""
+			if movie.MovieFile.Quality != nil && movie.MovieFile.Quality.Quality != nil {
+				quality = getStringRadarr(movie.MovieFile.Quality.Quality.Name)
+			}
+
+			err = s.DB.UpsertMediaFile(db.MediaFileRecord{
+				ArrInstance: inst.Name(),
+				ArrType:     "radarr",
+				ItemID:      *movie.Id,
+				FileID:      *movie.MovieFile.Id,
+				Path:        absPath,
+				Inode:       inode,
+				Size:        info.Size,
+				Duration:    int64(duration),
+				Quality:     quality,
+			})
+			if err != nil {
+				return fmt.Errorf("upsert media file: %w", err)
+			}
+
 			isCand, reason := s.Scorer.IsCandidate(info)
 			sizeStr := humanize.Bytes(uint64(info.Size))
 
@@ -254,14 +305,15 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 				s.TotalCandidate++
 
 				// Check for cross-seeds
-				path := getStringRadarr(movie.MovieFile.Path)
-				inode, _ := fsutil.GetInode(path)
 				records, _ := s.DB.GetTorrentsByInode(inode)
 
 				crossSeedInfo := ""
 				if len(records) > 1 {
 					crossSeedInfo = fmt.Sprintf(" [CROSS-SEED: %d clients/torrents]", len(records))
 				}
+
+				// Save Candidate
+				_ = s.DB.UpsertCandidate(inst.Name(), *movie.MovieFile.Id, reason)
 
 				s.UI.LogPermanent(fmt.Sprintf("\033[31m✘\033[0m [%s: %s] %s (%s) - %s%s", "Radarr", inst.Name(), title, sizeStr, reason, crossSeedInfo))
 			} else {

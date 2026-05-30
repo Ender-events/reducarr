@@ -46,6 +46,29 @@ func (d *DB) migrate() error {
 			PRIMARY KEY (client_name, info_hash, file_path)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_torrents_inode ON torrents(inode);`,
+		`CREATE TABLE IF NOT EXISTS media_files (
+			arr_instance TEXT,
+			arr_type TEXT,
+			item_id INTEGER,
+			file_id INTEGER,
+			path TEXT,
+			inode INTEGER,
+			size INTEGER,
+			duration INTEGER,
+			quality TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (arr_instance, file_id)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_media_files_inode ON media_files(inode);`,
+		`CREATE INDEX IF NOT EXISTS idx_media_files_path ON media_files(path);`,
+		`CREATE TABLE IF NOT EXISTS candidates (
+			arr_instance TEXT,
+			file_id INTEGER,
+			reason TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (arr_instance, file_id),
+			FOREIGN KEY (arr_instance, file_id) REFERENCES media_files (arr_instance, file_id) ON DELETE CASCADE
+		);`,
 	}
 
 	for _, q := range queries {
@@ -55,6 +78,45 @@ func (d *DB) migrate() error {
 	}
 
 	return nil
+}
+
+type MediaFileRecord struct {
+	ArrInstance string
+	ArrType     string
+	ItemID      int32
+	FileID      int32
+	Path        string
+	Inode       uint64
+	Size        int64
+	Duration    int64
+	Quality     string
+}
+
+func (d *DB) UpsertMediaFile(r MediaFileRecord) error {
+	_, err := d.Exec(`
+		INSERT INTO media_files (arr_instance, arr_type, item_id, file_id, path, inode, size, duration, quality, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(arr_instance, file_id) DO UPDATE SET
+			item_id = excluded.item_id,
+			path = excluded.path,
+			inode = excluded.inode,
+			size = excluded.size,
+			duration = excluded.duration,
+			quality = excluded.quality,
+			updated_at = excluded.updated_at
+	`, r.ArrInstance, r.ArrType, r.ItemID, r.FileID, r.Path, r.Inode, r.Size, r.Duration, r.Quality)
+	return err
+}
+
+func (d *DB) UpsertCandidate(arrInstance string, fileID int32, reason string) error {
+	_, err := d.Exec(`
+		INSERT INTO candidates (arr_instance, file_id, reason, updated_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(arr_instance, file_id) DO UPDATE SET
+			reason = excluded.reason,
+			updated_at = excluded.updated_at
+	`, arrInstance, fileID, reason)
+	return err
 }
 
 func (d *DB) GetLastItemID(instanceID string) (string, error) {
