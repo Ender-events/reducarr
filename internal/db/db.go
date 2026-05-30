@@ -42,6 +42,7 @@ func (d *DB) migrate() error {
 			file_path TEXT,
 			inode INTEGER,
 			is_seeding BOOLEAN,
+			added_at INTEGER,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (client_name, info_hash, file_path)
 		);`,
@@ -52,6 +53,7 @@ func (d *DB) migrate() error {
 			item_id INTEGER,
 			file_id INTEGER,
 			path TEXT,
+			title TEXT,
 			inode INTEGER,
 			size INTEGER,
 			duration INTEGER,
@@ -77,6 +79,9 @@ func (d *DB) migrate() error {
 		}
 	}
 
+	// Dynamic migration for added_at if table already exists
+	_, _ = d.Exec("ALTER TABLE torrents ADD COLUMN added_at INTEGER")
+
 	return nil
 }
 
@@ -86,6 +91,7 @@ type MediaFileRecord struct {
 	ItemID      int32
 	FileID      int32
 	Path        string
+	Title       string
 	Inode       uint64
 	Size        int64
 	Duration    int64
@@ -94,17 +100,18 @@ type MediaFileRecord struct {
 
 func (d *DB) UpsertMediaFile(r MediaFileRecord) error {
 	_, err := d.Exec(`
-		INSERT INTO media_files (arr_instance, arr_type, item_id, file_id, path, inode, size, duration, quality, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO media_files (arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(arr_instance, file_id) DO UPDATE SET
 			item_id = excluded.item_id,
 			path = excluded.path,
+			title = excluded.title,
 			inode = excluded.inode,
 			size = excluded.size,
 			duration = excluded.duration,
 			quality = excluded.quality,
 			updated_at = excluded.updated_at
-	`, r.ArrInstance, r.ArrType, r.ItemID, r.FileID, r.Path, r.Inode, r.Size, r.Duration, r.Quality)
+	`, r.ArrInstance, r.ArrType, r.ItemID, r.FileID, r.Path, r.Title, r.Inode, r.Size, r.Duration, r.Quality)
 	return err
 }
 
@@ -117,6 +124,34 @@ func (d *DB) UpsertCandidate(arrInstance string, fileID int32, reason string) er
 			updated_at = excluded.updated_at
 	`, arrInstance, fileID, reason)
 	return err
+}
+
+type CandidateRecord struct {
+	MediaFileRecord
+	Reason string
+}
+
+func (d *DB) GetCandidatesWithMedia() ([]CandidateRecord, error) {
+	rows, err := d.Query(`
+		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, c.reason
+		FROM candidates c
+		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		ORDER BY m.size DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []CandidateRecord
+	for rows.Next() {
+		var r CandidateRecord
+		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.Reason); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
 }
 
 func (d *DB) GetLastItemID(instanceID string) (string, error) {
@@ -148,13 +183,14 @@ type TorrentRecord struct {
 	InfoHash   string
 	FilePath   string
 	IsSeeding  bool
+	AddedAt    int64
 }
 
 func (d *DB) GetTorrentsByInode(inode uint64) ([]TorrentRecord, error) {
 	if inode == 0 {
 		return nil, nil
 	}
-	rows, err := d.Query("SELECT client_name, info_hash, file_path, is_seeding FROM torrents WHERE inode = ?", inode)
+	rows, err := d.Query("SELECT client_name, info_hash, file_path, is_seeding, added_at FROM torrents WHERE inode = ?", inode)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +199,7 @@ func (d *DB) GetTorrentsByInode(inode uint64) ([]TorrentRecord, error) {
 	var records []TorrentRecord
 	for rows.Next() {
 		var r TorrentRecord
-		if err := rows.Scan(&r.ClientName, &r.InfoHash, &r.FilePath, &r.IsSeeding); err != nil {
+		if err := rows.Scan(&r.ClientName, &r.InfoHash, &r.FilePath, &r.IsSeeding, &r.AddedAt); err != nil {
 			return nil, err
 		}
 		records = append(records, r)
@@ -177,9 +213,9 @@ func (d *DB) GetMediaFileByInode(inode uint64) (*MediaFileRecord, error) {
 	}
 	var r MediaFileRecord
 	err := d.QueryRow(`
-		SELECT arr_instance, arr_type, item_id, file_id, path, inode, size, duration, quality
+		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality
 		FROM media_files WHERE inode = ?`, inode).
-		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Inode, &r.Size, &r.Duration, &r.Quality)
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -192,9 +228,9 @@ func (d *DB) GetMediaFileByInode(inode uint64) (*MediaFileRecord, error) {
 func (d *DB) GetMediaFileByPath(path string) (*MediaFileRecord, error) {
 	var r MediaFileRecord
 	err := d.QueryRow(`
-		SELECT arr_instance, arr_type, item_id, file_id, path, inode, size, duration, quality
+		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality
 		FROM media_files WHERE path = ?`, path).
-		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Inode, &r.Size, &r.Duration, &r.Quality)
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -205,7 +241,7 @@ func (d *DB) GetMediaFileByPath(path string) (*MediaFileRecord, error) {
 }
 
 func (d *DB) GetAllTorrents() ([]TorrentRecord, error) {
-	rows, err := d.Query("SELECT client_name, info_hash, file_path, is_seeding FROM torrents ORDER BY client_name, file_path")
+	rows, err := d.Query("SELECT client_name, info_hash, file_path, is_seeding, added_at FROM torrents ORDER BY client_name, file_path")
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +250,7 @@ func (d *DB) GetAllTorrents() ([]TorrentRecord, error) {
 	var records []TorrentRecord
 	for rows.Next() {
 		var r TorrentRecord
-		if err := rows.Scan(&r.ClientName, &r.InfoHash, &r.FilePath, &r.IsSeeding); err != nil {
+		if err := rows.Scan(&r.ClientName, &r.InfoHash, &r.FilePath, &r.IsSeeding, &r.AddedAt); err != nil {
 			return nil, err
 		}
 		records = append(records, r)

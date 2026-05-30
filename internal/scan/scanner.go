@@ -176,6 +176,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 				ItemID:      *series.Id,
 				FileID:      *file.Id,
 				Path:        absPath, // Keep remote path in DB for Arrs matching
+				Title:       title,
 				Inode:       inode,
 				Size:        info.Size,
 				Duration:    int64(duration),
@@ -295,6 +296,7 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 				ItemID:      *movie.Id,
 				FileID:      *movie.MovieFile.Id,
 				Path:        absPath,
+				Title:       title,
 				Inode:       inode,
 				Size:        info.Size,
 				Duration:    int64(duration),

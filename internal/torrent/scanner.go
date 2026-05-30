@@ -80,13 +80,14 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 		isSeeding := t.State == "uploading" || t.State == "stalledUP" || t.State == "forcedUP" || t.State == "queuedUP"
 
 		_, err = s.DB.Exec(`
-			INSERT INTO torrents (client_name, info_hash, file_path, inode, is_seeding, updated_at)
-			VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			INSERT INTO torrents (client_name, info_hash, file_path, inode, is_seeding, added_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 			ON CONFLICT(client_name, info_hash, file_path) DO UPDATE SET
 				inode = excluded.inode,
 				is_seeding = excluded.is_seeding,
+				added_at = excluded.added_at,
 				updated_at = excluded.updated_at
-		`, inst.Name(), t.Hash, t.ContentPath, inode, isSeeding)
+		`, inst.Name(), t.Hash, t.ContentPath, inode, isSeeding, t.AddedOn)
 		if err != nil {
 			return fmt.Errorf("insert torrent: %w", err)
 		}

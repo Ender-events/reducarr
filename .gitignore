@@ -7,7 +7,7 @@
 *.dll
 *.so
 *.dylib
-reducarr
+./reducarr
 
 # Test binary, built with `go test -c`
 *.test
