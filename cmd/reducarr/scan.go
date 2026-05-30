@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 
+	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/scan"
 	"github.com/Ender-events/reducarr/internal/ui"
@@ -14,10 +16,11 @@ import (
 )
 
 var (
-	maxSize    string
-	maxRatio   string
-	maxBitrate string
-	resume     bool
+	maxSize         string
+	maxRatio        string
+	maxBitrate      string
+	resume          bool
+	targetInstances []string
 )
 
 var scanCmd = &cobra.Command{
@@ -78,14 +81,20 @@ var scanCmd = &cobra.Command{
 		defer database.Close()
 
 		// 3. Setup Client
-		sonarrInstances := make([]arrs.ArrInstance, len(cfg.Sonarr))
-		for i, s := range cfg.Sonarr {
-			sonarrInstances[i] = arrs.ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey}
+		var sonarrInstances []arrs.ArrInstance
+		for _, s := range cfg.Sonarr {
+			if len(targetInstances) > 0 && !slices.Contains(targetInstances, s.Name) {
+				continue
+			}
+			sonarrInstances = append(sonarrInstances, arrs.ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey})
 		}
 
-		radarrInstances := make([]arrs.ArrInstance, len(cfg.Radarr))
-		for i, r := range cfg.Radarr {
-			radarrInstances[i] = arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey}
+		var radarrInstances []arrs.ArrInstance
+		for _, r := range cfg.Radarr {
+			if len(targetInstances) > 0 && !slices.Contains(targetInstances, r.Name) {
+				continue
+			}
+			radarrInstances = append(radarrInstances, arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey})
 		}
 
 		qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
@@ -125,5 +134,23 @@ func init() {
 	scanCmd.Flags().StringVar(&maxRatio, "max-ratio", "", "Maximum allowed Size/Duration ratio (e.g., 100MiB/min)")
 	scanCmd.Flags().StringVar(&maxBitrate, "max-bitrate", "", "Maximum allowed bitrate (e.g., 10Mbit)")
 	scanCmd.Flags().BoolVar(&resume, "resume", false, "Resume scanning from the last saved checkpoint")
+	scanCmd.Flags().StringSliceVarP(&targetInstances, "instance", "i", []string{}, "Target specific instances to scan")
+
+	_ = scanCmd.RegisterFlagCompletionFunc("instance", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		var names []string
+		for _, s := range cfg.Sonarr {
+			names = append(names, s.Name)
+		}
+		for _, r := range cfg.Radarr {
+			names = append(names, r.Name)
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	})
+
 	rootCmd.AddCommand(scanCmd)
 }
