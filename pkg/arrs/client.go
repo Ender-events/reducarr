@@ -27,17 +27,43 @@ type HealthResult struct {
 	Error   error
 }
 
+type SonarrInstance interface {
+	Name() string
+	ApiKey() string
+	Api() *sonarr.APIClient
+}
+
+type RadarrInstance interface {
+	Name() string
+	ApiKey() string
+	Api() *radarr.APIClient
+}
+
 type Client struct {
-	Sonarr []instance[sonarr.APIClient]
-	Radarr []instance[radarr.APIClient]
+	Sonarr []SonarrInstance
+	Radarr []RadarrInstance
 	QBit   *qbittorrent.Client
 }
 
-type instance[T any] struct {
+type sonarrInst struct {
 	name   string
 	apiKey string
-	api    *T
+	api    *sonarr.APIClient
 }
+
+func (s *sonarrInst) Name() string           { return s.name }
+func (s *sonarrInst) ApiKey() string         { return s.apiKey }
+func (s *sonarrInst) Api() *sonarr.APIClient { return s.api }
+
+type radarrInst struct {
+	name   string
+	apiKey string
+	api    *radarr.APIClient
+}
+
+func (r *radarrInst) Name() string           { return r.name }
+func (r *radarrInst) ApiKey() string         { return r.apiKey }
+func (r *radarrInst) Api() *radarr.APIClient { return r.api }
 
 func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfig *QBitConfig) *Client {
 	c := &Client{}
@@ -45,7 +71,7 @@ func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfig *QBitConfi
 	for _, cfg := range sonarrConfigs {
 		sc := sonarr.NewConfiguration()
 		sc.Servers = sonarr.ServerConfigurations{{URL: cfg.URL}}
-		c.Sonarr = append(c.Sonarr, instance[sonarr.APIClient]{
+		c.Sonarr = append(c.Sonarr, &sonarrInst{
 			name:   cfg.Name,
 			apiKey: cfg.APIKey,
 			api:    sonarr.NewAPIClient(sc),
@@ -55,7 +81,7 @@ func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfig *QBitConfi
 	for _, cfg := range radarrConfigs {
 		rc := radarr.NewConfiguration()
 		rc.Servers = radarr.ServerConfigurations{{URL: cfg.URL}}
-		c.Radarr = append(c.Radarr, instance[radarr.APIClient]{
+		c.Radarr = append(c.Radarr, &radarrInst{
 			name:   cfg.Name,
 			apiKey: cfg.APIKey,
 			api:    radarr.NewAPIClient(rc),
@@ -79,11 +105,11 @@ func (c *Client) HealthCheck(ctx context.Context) []HealthResult {
 	// Check Sonarr
 	for _, s := range c.Sonarr {
 		authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
-			"X-Api-Key": {Key: s.apiKey},
+			"X-Api-Key": {Key: s.ApiKey()},
 		})
-		_, _, err := s.api.SystemAPI.GetSystemStatus(authCtx).Execute()
+		_, _, err := s.Api().SystemAPI.GetSystemStatus(authCtx).Execute()
 		results = append(results, HealthResult{
-			Name:    s.name,
+			Name:    s.Name(),
 			Type:    "Sonarr",
 			Healthy: err == nil,
 			Error:   err,
@@ -93,11 +119,11 @@ func (c *Client) HealthCheck(ctx context.Context) []HealthResult {
 	// Check Radarr
 	for _, r := range c.Radarr {
 		authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
-			"X-Api-Key": {Key: r.apiKey},
+			"X-Api-Key": {Key: r.ApiKey()},
 		})
-		_, _, err := r.api.SystemAPI.GetSystemStatus(authCtx).Execute()
+		_, _, err := r.Api().SystemAPI.GetSystemStatus(authCtx).Execute()
 		results = append(results, HealthResult{
-			Name:    r.name,
+			Name:    r.Name(),
 			Type:    "Radarr",
 			Healthy: err == nil,
 			Error:   err,

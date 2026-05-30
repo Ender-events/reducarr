@@ -20,7 +20,9 @@ type QBittorrentConfig struct {
 }
 
 type ScoringConfig struct {
-	MaxRatio float64 `mapstructure:"maxRatio"` // bytes per second
+	MaxSize    string `mapstructure:"maxSize"`
+	MaxRatio   string `mapstructure:"maxRatio"`
+	MaxBitrate string `mapstructure:"maxBitrate"`
 }
 
 type Config struct {
@@ -41,7 +43,9 @@ func LoadConfig() (*Config, error) {
 
 	// Defaults
 	viper.SetDefault("rateLimit", 50)
-	viper.SetDefault("scoring.maxRatio", 1024*1024) // 1MiB/s default? Need to refine this later.
+	viper.SetDefault("scoring.maxSize", "")
+	viper.SetDefault("scoring.maxRatio", "100MiB/min")
+	viper.SetDefault("scoring.maxBitrate", "")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
