@@ -10,6 +10,7 @@ import (
 var (
 	cfgFile string
 	cfg     *config.Config
+	verbose bool
 )
 
 var rootCmd = &cobra.Command{
@@ -28,4 +29,5 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
 }

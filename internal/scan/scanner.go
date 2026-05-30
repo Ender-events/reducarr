@@ -11,6 +11,7 @@ import (
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
+	"github.com/Ender-events/reducarr/pkg/fsutil"
 	"github.com/devopsarr/radarr-go/radarr"
 	"github.com/devopsarr/sonarr-go/sonarr"
 	"github.com/dustin/go-humanize"
@@ -158,7 +159,18 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 			s.TotalScanned++
 			if isCand {
 				s.TotalCandidate++
-				s.UI.LogPermanent(fmt.Sprintf("\033[31m✘\033[0m [%s: %s] %s - %s (%s) - %s", "Sonarr", inst.Name(), title, relPath, sizeStr, reason))
+
+				// Check for cross-seeds
+				path := getString(file.Path)
+				inode, _ := fsutil.GetInode(path)
+				records, _ := s.DB.GetTorrentsByInode(inode)
+
+				crossSeedInfo := ""
+				if len(records) > 1 {
+					crossSeedInfo = fmt.Sprintf(" [CROSS-SEED: %d clients/torrents]", len(records))
+				}
+
+				s.UI.LogPermanent(fmt.Sprintf("\033[31m✘\033[0m [%s: %s] %s - %s (%s) - %s%s", "Sonarr", inst.Name(), title, relPath, sizeStr, reason, crossSeedInfo))
 			} else {
 				msg := fmt.Sprintf("\033[32m✔\033[0m [%s: %s] %s - %s (%s)", "Sonarr", inst.Name(), title, relPath, sizeStr)
 				if s.Verbose {
@@ -240,7 +252,18 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 			s.TotalScanned++
 			if isCand {
 				s.TotalCandidate++
-				s.UI.LogPermanent(fmt.Sprintf("\033[31m✘\033[0m [%s: %s] %s (%s) - %s", "Radarr", inst.Name(), title, sizeStr, reason))
+
+				// Check for cross-seeds
+				path := getStringRadarr(movie.MovieFile.Path)
+				inode, _ := fsutil.GetInode(path)
+				records, _ := s.DB.GetTorrentsByInode(inode)
+
+				crossSeedInfo := ""
+				if len(records) > 1 {
+					crossSeedInfo = fmt.Sprintf(" [CROSS-SEED: %d clients/torrents]", len(records))
+				}
+
+				s.UI.LogPermanent(fmt.Sprintf("\033[31m✘\033[0m [%s: %s] %s (%s) - %s%s", "Radarr", inst.Name(), title, sizeStr, reason, crossSeedInfo))
 			} else {
 				msg := fmt.Sprintf("\033[32m✔\033[0m [%s: %s] %s (%s)", "Radarr", inst.Name(), title, sizeStr)
 				if s.Verbose {

@@ -13,10 +13,17 @@ type ArrInstance struct {
 	APIKey string `mapstructure:"apiKey"`
 }
 
+type PathMapping struct {
+	Remote string `mapstructure:"remote"`
+	Local  string `mapstructure:"local"`
+}
+
 type QBittorrentConfig struct {
-	URL      string `mapstructure:"url"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
+	Name         string        `mapstructure:"name"`
+	URL          string        `mapstructure:"url"`
+	Username     string        `mapstructure:"username"`
+	Password     string        `mapstructure:"password"`
+	PathMappings []PathMapping `mapstructure:"pathMappings"`
 }
 
 type ScoringConfig struct {
@@ -26,11 +33,11 @@ type ScoringConfig struct {
 }
 
 type Config struct {
-	Sonarr      []ArrInstance     `mapstructure:"sonarr"`
-	Radarr      []ArrInstance     `mapstructure:"radarr"`
-	QBittorrent QBittorrentConfig `mapstructure:"qbittorrent"`
-	Scoring     ScoringConfig     `mapstructure:"scoring"`
-	RateLimit   int               `mapstructure:"rateLimit"` // searches per hour
+	Sonarr      []ArrInstance       `mapstructure:"sonarr"`
+	Radarr      []ArrInstance       `mapstructure:"radarr"`
+	QBittorrent []QBittorrentConfig `mapstructure:"qbittorrent"`
+	Scoring     ScoringConfig       `mapstructure:"scoring"`
+	RateLimit   int                 `mapstructure:"rateLimit"` // searches per hour
 }
 
 func LoadConfig() (*Config, error) {

@@ -15,6 +15,7 @@ type ArrInstance struct {
 }
 
 type QBitConfig struct {
+	Name     string
 	URL      string
 	Username string
 	Password string
@@ -39,10 +40,15 @@ type RadarrInstance interface {
 	Api() *radarr.APIClient
 }
 
+type TorrentInstance interface {
+	Name() string
+	Api() *qbittorrent.Client
+}
+
 type Client struct {
-	Sonarr []SonarrInstance
-	Radarr []RadarrInstance
-	QBit   *qbittorrent.Client
+	Sonarr   []SonarrInstance
+	Radarr   []RadarrInstance
+	Torrents []TorrentInstance
 }
 
 type sonarrInst struct {
@@ -65,7 +71,15 @@ func (r *radarrInst) Name() string           { return r.name }
 func (r *radarrInst) ApiKey() string         { return r.apiKey }
 func (r *radarrInst) Api() *radarr.APIClient { return r.api }
 
-func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfig *QBitConfig) *Client {
+type torrentInst struct {
+	name string
+	api  *qbittorrent.Client
+}
+
+func (t *torrentInst) Name() string             { return t.name }
+func (t *torrentInst) Api() *qbittorrent.Client { return t.api }
+
+func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitConfig) *Client {
 	c := &Client{}
 
 	for _, cfg := range sonarrConfigs {
@@ -88,11 +102,15 @@ func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfig *QBitConfi
 		})
 	}
 
-	if qbitConfig != nil {
-		c.QBit = qbittorrent.NewClient(qbittorrent.Config{
-			Host:     qbitConfig.URL,
-			Username: qbitConfig.Username,
-			Password: qbitConfig.Password,
+	for _, cfg := range qbitConfigs {
+		api := qbittorrent.NewClient(qbittorrent.Config{
+			Host:     cfg.URL,
+			Username: cfg.Username,
+			Password: cfg.Password,
+		})
+		c.Torrents = append(c.Torrents, &torrentInst{
+			name: cfg.Name,
+			api:  api,
 		})
 	}
 
@@ -131,13 +149,13 @@ func (c *Client) HealthCheck(ctx context.Context) []HealthResult {
 	}
 
 	// Check qBittorrent
-	if c.QBit != nil {
-		err := c.QBit.LoginCtx(ctx)
+	for _, t := range c.Torrents {
+		err := t.Api().LoginCtx(ctx)
 		if err == nil {
-			_, err = c.QBit.GetAppVersionCtx(ctx)
+			_, err = t.Api().GetAppVersionCtx(ctx)
 		}
 		results = append(results, HealthResult{
-			Name:    "qBittorrent",
+			Name:    t.Name(),
 			Type:    "TorrentClient",
 			Healthy: err == nil,
 			Error:   err,

@@ -36,6 +36,16 @@ func (d *DB) migrate() error {
 			last_item_id TEXT,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
+		`CREATE TABLE IF NOT EXISTS torrents (
+			client_name TEXT,
+			info_hash TEXT,
+			file_path TEXT,
+			inode INTEGER,
+			is_seeding BOOLEAN,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (client_name, info_hash, file_path)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_torrents_inode ON torrents(inode);`,
 	}
 
 	for _, q := range queries {
@@ -56,6 +66,10 @@ func (d *DB) GetLastItemID(instanceID string) (string, error) {
 	return lastID, err
 }
 
+func (d *DB) Exec(query string, args ...any) (sql.Result, error) {
+	return d.DB.Exec(query, args...)
+}
+
 func (d *DB) SetLastItemID(instanceID, lastID string) error {
 	_, err := d.Exec(`
 		INSERT INTO scan_state (instance_id, last_item_id, updated_at)
@@ -65,4 +79,50 @@ func (d *DB) SetLastItemID(instanceID, lastID string) error {
 			updated_at = excluded.updated_at
 	`, instanceID, lastID)
 	return err
+}
+
+type TorrentRecord struct {
+	ClientName string
+	InfoHash   string
+	FilePath   string
+	IsSeeding  bool
+}
+
+func (d *DB) GetTorrentsByInode(inode uint64) ([]TorrentRecord, error) {
+	if inode == 0 {
+		return nil, nil
+	}
+	rows, err := d.Query("SELECT client_name, info_hash, file_path, is_seeding FROM torrents WHERE inode = ?", inode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []TorrentRecord
+	for rows.Next() {
+		var r TorrentRecord
+		if err := rows.Scan(&r.ClientName, &r.InfoHash, &r.FilePath, &r.IsSeeding); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
+func (d *DB) GetAllTorrents() ([]TorrentRecord, error) {
+	rows, err := d.Query("SELECT client_name, info_hash, file_path, is_seeding FROM torrents ORDER BY client_name, file_path")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []TorrentRecord
+	for rows.Next() {
+		var r TorrentRecord
+		if err := rows.Scan(&r.ClientName, &r.InfoHash, &r.FilePath, &r.IsSeeding); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
 }

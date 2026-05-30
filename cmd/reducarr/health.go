@@ -23,13 +23,17 @@ var healthCmd = &cobra.Command{
 			radarrInstances[i] = arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey}
 		}
 
-		qbitCfg := &arrs.QBitConfig{
-			URL:      cfg.QBittorrent.URL,
-			Username: cfg.QBittorrent.Username,
-			Password: cfg.QBittorrent.Password,
+		qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
+		for i, q := range cfg.QBittorrent {
+			qbitConfigs[i] = arrs.QBitConfig{
+				Name:     q.Name,
+				URL:      q.URL,
+				Username: q.Username,
+				Password: q.Password,
+			}
 		}
 
-		client := arrs.NewClient(sonarrInstances, radarrInstances, qbitCfg)
+		client := arrs.NewClient(sonarrInstances, radarrInstances, qbitConfigs)
 		results := client.HealthCheck(context.Background())
 
 		hasError := false
