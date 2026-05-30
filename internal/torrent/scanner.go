@@ -3,9 +3,7 @@ package torrent
 import (
 	"context"
 	"fmt"
-	"strings"
 
-	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
@@ -17,14 +15,14 @@ type Scanner struct {
 	Client   *arrs.Client
 	DB       *db.DB
 	UI       *ui.ProgressLogger
-	Mappings map[string][]config.PathMapping // client name -> mappings
+	Mappings map[string][]fsutil.PathMapping // client name -> mappings
 	Verbose  bool
 
 	TotalTorrents int
 	TotalClients  int
 }
 
-func NewScanner(client *arrs.Client, database *db.DB, logger *ui.ProgressLogger, mappings map[string][]config.PathMapping) *Scanner {
+func NewScanner(client *arrs.Client, database *db.DB, logger *ui.ProgressLogger, mappings map[string][]fsutil.PathMapping) *Scanner {
 	return &Scanner{
 		Client:   client,
 		DB:       database,
@@ -66,8 +64,6 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 		return err
 	}
 
-	mappings := s.Mappings[inst.Name()]
-
 	for _, t := range torrents {
 		s.TotalTorrents++
 		msg := fmt.Sprintf("[%s] %s (%s)", inst.Name(), t.Name, t.Hash)
@@ -77,7 +73,7 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 			s.UI.UpdateTruncate(fmt.Sprintf("Scanning torrent: %s", msg))
 		}
 
-		localPath := MapPath(t.ContentPath, mappings)
+		localPath := fsutil.MapPath(t.ContentPath, inst.PathMappings())
 
 		inode, _ := fsutil.GetInode(localPath)
 
@@ -100,13 +96,4 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 		s.UI.LogPermanent(fmt.Sprintf("\033[32m✔\033[0m Scanned %d torrents from %s", len(torrents), inst.Name()))
 	}
 	return nil
-}
-
-func MapPath(path string, mappings []config.PathMapping) string {
-	for _, m := range mappings {
-		if strings.HasPrefix(path, m.Remote) {
-			return strings.Replace(path, m.Remote, m.Local, 1)
-		}
-	}
-	return path
 }

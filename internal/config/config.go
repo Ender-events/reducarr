@@ -4,26 +4,23 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Ender-events/reducarr/pkg/fsutil"
 	"github.com/spf13/viper"
 )
 
 type ArrInstance struct {
-	Name   string `mapstructure:"name"`
-	URL    string `mapstructure:"url"`
-	APIKey string `mapstructure:"apiKey"`
-}
-
-type PathMapping struct {
-	Remote string `mapstructure:"remote"`
-	Local  string `mapstructure:"local"`
+	Name         string               `mapstructure:"name"`
+	URL          string               `mapstructure:"url"`
+	APIKey       string               `mapstructure:"apiKey"`
+	PathMappings []fsutil.PathMapping `mapstructure:"pathMappings"`
 }
 
 type QBittorrentConfig struct {
-	Name         string        `mapstructure:"name"`
-	URL          string        `mapstructure:"url"`
-	Username     string        `mapstructure:"username"`
-	Password     string        `mapstructure:"password"`
-	PathMappings []PathMapping `mapstructure:"pathMappings"`
+	Name         string               `mapstructure:"name"`
+	URL          string               `mapstructure:"url"`
+	Username     string               `mapstructure:"username"`
+	Password     string               `mapstructure:"password"`
+	PathMappings []fsutil.PathMapping `mapstructure:"pathMappings"`
 }
 
 type ScoringConfig struct {

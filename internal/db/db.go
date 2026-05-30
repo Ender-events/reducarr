@@ -171,6 +171,39 @@ func (d *DB) GetTorrentsByInode(inode uint64) ([]TorrentRecord, error) {
 	return records, nil
 }
 
+func (d *DB) GetMediaFileByInode(inode uint64) (*MediaFileRecord, error) {
+	if inode == 0 {
+		return nil, nil
+	}
+	var r MediaFileRecord
+	err := d.QueryRow(`
+		SELECT arr_instance, arr_type, item_id, file_id, path, inode, size, duration, quality
+		FROM media_files WHERE inode = ?`, inode).
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Inode, &r.Size, &r.Duration, &r.Quality)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (d *DB) GetMediaFileByPath(path string) (*MediaFileRecord, error) {
+	var r MediaFileRecord
+	err := d.QueryRow(`
+		SELECT arr_instance, arr_type, item_id, file_id, path, inode, size, duration, quality
+		FROM media_files WHERE path = ?`, path).
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Inode, &r.Size, &r.Duration, &r.Quality)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 func (d *DB) GetAllTorrents() ([]TorrentRecord, error) {
 	rows, err := d.Query("SELECT client_name, info_hash, file_path, is_seeding FROM torrents ORDER BY client_name, file_path")
 	if err != nil {

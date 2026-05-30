@@ -86,7 +86,12 @@ var scanCmd = &cobra.Command{
 			if len(targetInstances) > 0 && !slices.Contains(targetInstances, s.Name) {
 				continue
 			}
-			sonarrInstances = append(sonarrInstances, arrs.ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey})
+			sonarrInstances = append(sonarrInstances, arrs.ArrInstance{
+				Name:         s.Name,
+				URL:          s.URL,
+				APIKey:       s.APIKey,
+				PathMappings: s.PathMappings,
+			})
 		}
 
 		var radarrInstances []arrs.ArrInstance
@@ -94,16 +99,22 @@ var scanCmd = &cobra.Command{
 			if len(targetInstances) > 0 && !slices.Contains(targetInstances, r.Name) {
 				continue
 			}
-			radarrInstances = append(radarrInstances, arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey})
+			radarrInstances = append(radarrInstances, arrs.ArrInstance{
+				Name:         r.Name,
+				URL:          r.URL,
+				APIKey:       r.APIKey,
+				PathMappings: r.PathMappings,
+			})
 		}
 
 		qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
 		for i, q := range cfg.QBittorrent {
 			qbitConfigs[i] = arrs.QBitConfig{
-				Name:     q.Name,
-				URL:      q.URL,
+				Name:         q.Name,
+				URL:          q.URL,
 				Username: q.Username,
 				Password: q.Password,
+				PathMappings: q.PathMappings,
 			}
 		}
 

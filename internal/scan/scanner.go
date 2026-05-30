@@ -158,8 +158,11 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 			absPath := getString(file.Path)
 			sizeStr := humanize.Bytes(uint64(info.Size))
 
+			// Apply Path Mapping
+			localPath := fsutil.MapPath(absPath, inst.PathMappings())
+
 			// Get Inode for cache
-			inode, _ := fsutil.GetInode(absPath)
+			inode, _ := fsutil.GetInode(localPath)
 
 			// Update Media Cache
 			quality := ""
@@ -172,7 +175,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 				ArrType:     "sonarr",
 				ItemID:      *series.Id,
 				FileID:      *file.Id,
-				Path:        absPath,
+				Path:        absPath, // Keep remote path in DB for Arrs matching
 				Inode:       inode,
 				Size:        info.Size,
 				Duration:    int64(duration),
@@ -274,7 +277,11 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 			}
 
 			absPath := getStringRadarr(movie.MovieFile.Path)
-			inode, _ := fsutil.GetInode(absPath)
+			
+			// Apply Path Mapping
+			localPath := fsutil.MapPath(absPath, inst.PathMappings())
+			
+			inode, _ := fsutil.GetInode(localPath)
 
 			// Update Media Cache
 			quality := ""
