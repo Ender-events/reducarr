@@ -112,8 +112,8 @@ var scanCmd = &cobra.Command{
 			qbitConfigs[i] = arrs.QBitConfig{
 				Name:         q.Name,
 				URL:          q.URL,
-				Username: q.Username,
-				Password: q.Password,
+				Username:     q.Username,
+				Password:     q.Password,
 				PathMappings: q.PathMappings,
 			}
 		}

@@ -1,7 +1,11 @@
 package arrs
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 
 	"github.com/Ender-events/reducarr/pkg/fsutil"
 	"github.com/autobrr/go-qbittorrent"
@@ -43,6 +47,9 @@ type RadarrInstance interface {
 	ApiKey() string
 	Api() *radarr.APIClient
 	PathMappings() []fsutil.PathMapping
+	ListReleases(ctx context.Context, movieId int32) ([]radarr.ReleaseResource, error)
+	DownloadRelease(ctx context.Context, release *radarr.ReleaseResource) error
+	TriggerMovieSearch(ctx context.Context, movieId int32) error
 }
 
 type TorrentInstance interface {
@@ -64,22 +71,80 @@ type sonarrInst struct {
 	mappings []fsutil.PathMapping
 }
 
-func (s *sonarrInst) Name() string                     { return s.name }
-func (s *sonarrInst) ApiKey() string                   { return s.apiKey }
-func (s *sonarrInst) Api() *sonarr.APIClient           { return s.api }
+func (s *sonarrInst) Name() string                       { return s.name }
+func (s *sonarrInst) ApiKey() string                     { return s.apiKey }
+func (s *sonarrInst) Api() *sonarr.APIClient             { return s.api }
 func (s *sonarrInst) PathMappings() []fsutil.PathMapping { return s.mappings }
 
 type radarrInst struct {
 	name     string
+	url      string
 	apiKey   string
 	api      *radarr.APIClient
 	mappings []fsutil.PathMapping
 }
 
-func (r *radarrInst) Name() string                     { return r.name }
-func (r *radarrInst) ApiKey() string                   { return r.apiKey }
-func (r *radarrInst) Api() *radarr.APIClient           { return r.api }
+func (r *radarrInst) Name() string                       { return r.name }
+func (r *radarrInst) ApiKey() string                     { return r.apiKey }
+func (r *radarrInst) Api() *radarr.APIClient             { return r.api }
 func (r *radarrInst) PathMappings() []fsutil.PathMapping { return r.mappings }
+
+func (r *radarrInst) ListReleases(ctx context.Context, movieId int32) ([]radarr.ReleaseResource, error) {
+	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
+		"X-Api-Key": {Key: r.apiKey},
+	})
+	releases, _, err := r.api.ReleaseAPI.ListRelease(authCtx).MovieId(movieId).Execute()
+	return releases, err
+}
+
+func (r *radarrInst) DownloadRelease(ctx context.Context, release *radarr.ReleaseResource) error {
+	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
+		"X-Api-Key": {Key: r.apiKey},
+	})
+	resp, err := r.api.ReleaseAPI.CreateRelease(authCtx).ReleaseResource(*release).Execute()
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (r *radarrInst) TriggerMovieSearch(ctx context.Context, movieId int32) error {
+	body := map[string]interface{}{
+		"name":     "MovieSearch",
+		"movieIds": []int32{movieId},
+	}
+	return r.rawPost(ctx, "/api/v3/command", body)
+}
+
+func (r *radarrInst) rawPost(ctx context.Context, endpoint string, body interface{}) error {
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", r.url+endpoint, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", r.apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
 
 type torrentInst struct {
 	name     string
@@ -87,8 +152,8 @@ type torrentInst struct {
 	mappings []fsutil.PathMapping
 }
 
-func (t *torrentInst) Name() string                     { return t.name }
-func (t *torrentInst) Api() *qbittorrent.Client         { return t.api }
+func (t *torrentInst) Name() string                       { return t.name }
+func (t *torrentInst) Api() *qbittorrent.Client           { return t.api }
 func (t *torrentInst) PathMappings() []fsutil.PathMapping { return t.mappings }
 
 func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitConfig) *Client {
@@ -110,6 +175,7 @@ func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitCon
 		rc.Servers = radarr.ServerConfigurations{{URL: cfg.URL}}
 		c.Radarr = append(c.Radarr, &radarrInst{
 			name:     cfg.Name,
+			url:      cfg.URL,
 			apiKey:   cfg.APIKey,
 			api:      radarr.NewAPIClient(rc),
 			mappings: cfg.PathMappings,
@@ -178,4 +244,43 @@ func (c *Client) HealthCheck(ctx context.Context) []HealthResult {
 	}
 
 	return results
+}
+
+func (c *Client) FindSonarr(name string) SonarrInstance {
+	for _, s := range c.Sonarr {
+		if s.Name() == name {
+			return s
+		}
+	}
+	return nil
+}
+
+func (c *Client) FindRadarr(name string) RadarrInstance {
+	for _, r := range c.Radarr {
+		if r.Name() == name {
+			return r
+		}
+	}
+	return nil
+}
+
+func GetString(n sonarr.NullableString) string {
+	if n.Get() == nil {
+		return ""
+	}
+	return *n.Get()
+}
+
+func GetStringRadarr(n radarr.NullableString) string {
+	if n.Get() == nil {
+		return ""
+	}
+	return *n.Get()
+}
+
+func GetBoolRadarr(n radarr.NullableBool) bool {
+	if n.Get() == nil {
+		return false
+	}
+	return *n.Get()
 }

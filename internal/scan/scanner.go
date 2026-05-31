@@ -65,27 +65,6 @@ func (s *Scanner) printSummary() {
 	s.UI.LogPermanent(fmt.Sprintf("  \033[31m✘ Candidates\033[0m: %d", s.TotalCandidate))
 }
 
-func getString(n sonarr.NullableString) string {
-	if n.Get() == nil {
-		return ""
-	}
-	return *n.Get()
-}
-
-func getStringRadarr(n radarr.NullableString) string {
-	if n.Get() == nil {
-		return ""
-	}
-	return *n.Get()
-}
-
-func getBoolRadarr(n radarr.NullableBool) bool {
-	if n.Get() == nil {
-		return false
-	}
-	return *n.Get()
-}
-
 func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInstance) error {
 	instanceID := fmt.Sprintf("sonarr_%d", idx)
 	lastID := ""
@@ -131,7 +110,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 			continue
 		}
 
-		title := getString(series.Title)
+		title := arrs.GetString(series.Title)
 
 		files, _, err := inst.Api().EpisodeFileAPI.ListEpisodeFile(authCtx).SeriesId(*series.Id).Execute()
 		if err != nil {
@@ -141,7 +120,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 		for _, file := range files {
 			duration := 0.0
 			if file.MediaInfo != nil {
-				d, _ := ParseDuration(getString(file.MediaInfo.RunTime))
+				d, _ := ParseDuration(arrs.GetString(file.MediaInfo.RunTime))
 				duration = d
 			}
 			if duration == 0 && series.Runtime != nil {
@@ -154,8 +133,8 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 			}
 
 			isCand, reason := s.Scorer.IsCandidate(info)
-			relPath := getString(file.RelativePath)
-			absPath := getString(file.Path)
+			relPath := arrs.GetString(file.RelativePath)
+			absPath := arrs.GetString(file.Path)
 			sizeStr := humanize.Bytes(uint64(info.Size))
 
 			// Apply Path Mapping
@@ -167,7 +146,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 			// Update Media Cache
 			quality := ""
 			if file.Quality != nil && file.Quality.Quality != nil {
-				quality = getString(file.Quality.Quality.Name)
+				quality = arrs.GetString(file.Quality.Quality.Name)
 			}
 
 			err = s.DB.UpsertMediaFile(db.MediaFileRecord{
@@ -260,12 +239,12 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 			continue
 		}
 
-		title := getStringRadarr(movie.Title)
+		title := arrs.GetStringRadarr(movie.Title)
 
-		if getBoolRadarr(movie.HasFile) && movie.MovieFile != nil {
+		if arrs.GetBoolRadarr(movie.HasFile) && movie.MovieFile != nil {
 			duration := 0.0
 			if movie.MovieFile.MediaInfo != nil {
-				d, _ := ParseDuration(getStringRadarr(movie.MovieFile.MediaInfo.RunTime))
+				d, _ := ParseDuration(arrs.GetStringRadarr(movie.MovieFile.MediaInfo.RunTime))
 				duration = d
 			}
 			if duration == 0 && movie.Runtime != nil {
@@ -277,17 +256,17 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 				Duration: duration,
 			}
 
-			absPath := getStringRadarr(movie.MovieFile.Path)
-			
+			absPath := arrs.GetStringRadarr(movie.MovieFile.Path)
+
 			// Apply Path Mapping
 			localPath := fsutil.MapPath(absPath, inst.PathMappings())
-			
+
 			inode, _ := fsutil.GetInode(localPath)
 
 			// Update Media Cache
 			quality := ""
 			if movie.MovieFile.Quality != nil && movie.MovieFile.Quality.Quality != nil {
-				quality = getStringRadarr(movie.MovieFile.Quality.Quality.Name)
+				quality = arrs.GetStringRadarr(movie.MovieFile.Quality.Quality.Name)
 			}
 
 			err = s.DB.UpsertMediaFile(db.MediaFileRecord{

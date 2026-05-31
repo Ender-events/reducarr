@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -38,4 +39,40 @@ func (p *ProgressLogger) LogPermanent(msg string) {
 
 func (p *ProgressLogger) Done() {
 	fmt.Println()
+}
+
+type Spinner struct {
+	done chan bool
+	msg  string
+}
+
+func NewSpinner(msg string) *Spinner {
+	return &Spinner{
+		done: make(chan bool),
+		msg:  msg,
+	}
+}
+
+func (s *Spinner) Start() {
+	frames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	go func() {
+		i := 0
+		for {
+			select {
+			case <-s.done:
+				return
+			default:
+				fmt.Printf("\r\033[K\033[36m%s\033[0m %s", frames[i], s.msg)
+				os.Stdout.Sync()
+				i = (i + 1) % len(frames)
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}()
+}
+
+func (s *Spinner) Stop() {
+	s.done <- true
+	fmt.Print("\r\033[K") // Clear the spinner line
+	os.Stdout.Sync()
 }
