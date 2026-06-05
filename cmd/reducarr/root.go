@@ -11,6 +11,7 @@ var (
 	cfgFile string
 	cfg     *config.Config
 	verbose bool
+	dryRun  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -30,4 +31,5 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Do not perform any destructive actions (torrent deletion, release grab)")
 }

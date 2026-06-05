@@ -79,11 +79,21 @@ var candidatesCmd = &cobra.Command{
 			for i, c := range candidates {
 				// Fetch torrents for this candidate
 				torrentRecords, _ := database.GetTorrentsByInode(c.Inode)
+
+				minSeedTime, _ := time.ParseDuration(cfg.Scoring.MinSeedDuration)
+
 				var torrentsInfo []string
 				for _, t := range torrentRecords {
 					addedStr := "unknown"
 					if t.AddedAt > 0 {
-						addedStr = time.Unix(t.AddedAt, 0).Format("2006-01-02 15:04")
+						addedTime := time.Unix(t.AddedAt, 0)
+						addedStr = addedTime.Format("2006-01-02 15:04")
+
+						// Check if age is less than minSeedTime
+						if minSeedTime > 0 && time.Since(addedTime) < minSeedTime {
+							// Orange color (ANSI 208 or simple yellow if not supported)
+							addedStr = fmt.Sprintf("\033[38;5;208m%s\033[0m", addedStr)
+						}
 					}
 					torrentsInfo = append(torrentsInfo, fmt.Sprintf("  - [%s] %s (Added: %s)", t.ClientName, t.InfoHash[:8], addedStr))
 				}
@@ -178,7 +188,7 @@ var candidatesCmd = &cobra.Command{
 	},
 }
 
-func getArrClient() *arrs.Client {
+func getClient() *arrs.Client {
 	sonarrInstances := make([]arrs.ArrInstance, len(cfg.Sonarr))
 	for i, s := range cfg.Sonarr {
 		sonarrInstances[i] = arrs.ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey, PathMappings: s.PathMappings}
@@ -187,7 +197,17 @@ func getArrClient() *arrs.Client {
 	for i, r := range cfg.Radarr {
 		radarrInstances[i] = arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey, PathMappings: r.PathMappings}
 	}
-	return arrs.NewClient(sonarrInstances, radarrInstances, nil)
+	qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
+	for i, q := range cfg.QBittorrent {
+		qbitConfigs[i] = arrs.QBitConfig{
+			Name:         q.Name,
+			URL:          q.URL,
+			Username:     q.Username,
+			Password:     q.Password,
+			PathMappings: q.PathMappings,
+		}
+	}
+	return arrs.NewClient(sonarrInstances, radarrInstances, qbitConfigs)
 }
 
 func showTorrentContext(item displayItem, database *db.DB) {
@@ -228,10 +248,10 @@ type genericRelease struct {
 	Protocol   string
 	Rejections []string
 	Score      *int32
-	Raw        interface{}
+	Raw        any
 }
 
-func sortAndSelectRelease(releases []genericRelease, item displayItem, database *db.DB) interface{} {
+func sortAndSelectRelease(releases []genericRelease, item displayItem, database *db.DB) any {
 	if len(releases) == 0 {
 		fmt.Println("No releases found.")
 		return nil
@@ -265,6 +285,7 @@ func sortAndSelectRelease(releases []genericRelease, item displayItem, database 
 		Label:    "{{ . }}",
 		Active:   "\033[31m▶\033[0m {{ .Title | cyan }} [{{ .ScoreStr | magenta }}] | {{ .SizeStr | yellow }} | {{ .Indexer | green }}",
 		Inactive: "  {{ .Title | cyan }} [{{ .ScoreStr | magenta }}] | {{ .SizeStr | yellow }} | {{ .Indexer | green }}",
+		Selected: "\033[32m✔\033[0m Selected: {{ .Title | cyan }}",
 		Details: `
 --------- Release Details ---------
 {{ "Indexer:" | faint }}   {{ .Indexer }}
@@ -285,7 +306,7 @@ func sortAndSelectRelease(releases []genericRelease, item displayItem, database 
 		Protocol      string
 		RejectionsStr string
 		ScoreStr      string
-		Raw           interface{}
+		Raw           any
 	}
 
 	displayItems := make([]displayRelease, len(releases))
@@ -354,8 +375,74 @@ func sortAndSelectRelease(releases []genericRelease, item displayItem, database 
 	return selected.Raw
 }
 
+func deleteAssociatedTorrents(ctx context.Context, item displayItem, database *db.DB, client *arrs.Client) error {
+	torrentRecords, err := database.GetTorrentsByInode(item.Inode)
+	if err != nil {
+		return fmt.Errorf("fetch torrents from DB: %w", err)
+	}
+
+	if verbose {
+		for _, tr := range torrentRecords {
+			fmt.Printf("  \033[34mℹ\033[0m Deleting associated torrent %s (%s) in client %s\n", tr.InfoHash, tr.FilePath, tr.ClientName)
+		}
+	}
+
+	for _, tr := range torrentRecords {
+		// 1. Cross-seed check: find OTHER torrents sharing ANY file of THIS torrent
+		allFilesOfThisTorrent, err := database.GetTorrentsByHash(tr.InfoHash)
+		if err != nil {
+			fmt.Printf("  \033[33m⚠\033[0m Could not verify cross-seeds for %s, skipping deletion.\n", tr.InfoHash)
+			continue
+		}
+
+		safeToDeleteFiles := true
+		for _, file := range allFilesOfThisTorrent {
+			otherTorrents, _ := database.GetTorrentsByInode(file.Inode)
+			for _, ot := range otherTorrents {
+				if ot.InfoHash != tr.InfoHash {
+					// Found another torrent using one of our files!
+					safeToDeleteFiles = false
+					fmt.Printf("  \033[34mℹ\033[0m Cross-seed detected for %s (shared with %s). Torrent will be removed WITHOUT deleting files.\n", tr.InfoHash, ot.InfoHash)
+					break
+				}
+			}
+			if !safeToDeleteFiles {
+				break
+			}
+		}
+
+		if len(client.Torrents) == 0 {
+			fmt.Printf("  \033[33m⚠\033[0m No torrents found in client %s to delete.\n", tr.ClientName)
+			continue
+		}
+
+		// 2. Perform deletion
+		for _, tInst := range client.Torrents {
+			if tInst.Name() == tr.ClientName {
+				if dryRun {
+					fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent: %s (Client: %s, DeleteFiles: %v)\n", tr.InfoHash[:8], tr.ClientName, safeToDeleteFiles)
+					break
+				}
+
+				// Login before delete
+				if err := tInst.Api().LoginCtx(ctx); err != nil {
+					return fmt.Errorf("login to client %s: %w", tr.ClientName, err)
+				}
+
+				fmt.Printf("  Removing torrent: %s (Client: %s, DeleteFiles: %v)...\n", tr.InfoHash[:8], tr.ClientName, safeToDeleteFiles)
+				err := tInst.DeleteTorrent(ctx, tr.InfoHash, safeToDeleteFiles)
+				if err != nil {
+					return fmt.Errorf("delete torrent %s: %w", tr.InfoHash, err)
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
 func searchForRadarrAlternatives(item displayItem, database *db.DB) {
-	client := getArrClient()
+	client := getClient()
 	inst := client.FindRadarr(item.ArrInstance)
 	if inst == nil {
 		fmt.Printf("Error: could not find Radarr instance %s\n", item.ArrInstance)
@@ -414,6 +501,19 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB) {
 	}
 
 	selected := selectedRaw.(*radarr.ReleaseResource)
+
+	// 1. Delete associated torrents FIRST
+	fmt.Printf("Cleaning up current torrents for: %s...\n", item.Title)
+	if err := deleteAssociatedTorrents(ctx, item, database, client); err != nil {
+		fmt.Printf("\033[31m✘\033[0m Warning: failed to delete torrents: %v. Continuing with grab...\n", err)
+	}
+
+	// 2. Trigger grab
+	if dryRun {
+		fmt.Printf("\033[33m[DRY-RUN]\033[0m Would grabbing release: %s\n", arrs.GetStringRadarr(selected.Title))
+		return
+	}
+
 	fmt.Printf("Grabbing release: %s...\n", arrs.GetStringRadarr(selected.Title))
 	err = inst.DownloadRelease(ctx, selected)
 	if err != nil {
@@ -425,7 +525,7 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB) {
 }
 
 func searchForSonarrAlternatives(item displayItem, database *db.DB) {
-	client := getArrClient()
+	client := getClient()
 	inst := client.FindSonarr(item.ArrInstance)
 	if inst == nil {
 		fmt.Printf("Error: could not find Sonarr instance %s\n", item.ArrInstance)
@@ -527,6 +627,19 @@ func searchForSonarrAlternatives(item displayItem, database *db.DB) {
 	}
 
 	selected := selectedRaw.(*sonarr.ReleaseResource)
+
+	// 1. Delete associated torrents FIRST
+	fmt.Printf("Cleaning up current torrents for: %s...\n", item.Title)
+	if err := deleteAssociatedTorrents(ctx, item, database, client); err != nil {
+		fmt.Printf("\033[31m✘\033[0m Warning: failed to delete torrents: %v. Continuing with grab...\n", err)
+	}
+
+	// 2. Trigger grab
+	if dryRun {
+		fmt.Printf("\033[33m[DRY-RUN]\033[0m Would grabbing release: %s\n", arrs.GetString(selected.Title))
+		return
+	}
+
 	fmt.Printf("Grabbing release: %s...\n", arrs.GetString(selected.Title))
 	err = inst.DownloadRelease(ctx, selected)
 	if err != nil {

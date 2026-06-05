@@ -61,6 +61,7 @@ type TorrentInstance interface {
 	Api() *qbittorrent.Client
 	PathMappings() []fsutil.PathMapping
 	GetFiles(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error)
+	DeleteTorrent(ctx context.Context, hash string, deleteFiles bool) error
 }
 
 type Client struct {
@@ -104,6 +105,7 @@ func (s *sonarrInst) DownloadRelease(ctx context.Context, release *sonarr.Releas
 	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
 		"X-Api-Key": {Key: s.apiKey},
 	})
+
 	resp, err := s.api.ReleaseAPI.CreateRelease(authCtx).ReleaseResource(*release).Execute()
 	if err != nil {
 		return err
@@ -155,6 +157,7 @@ func (r *radarrInst) DownloadRelease(ctx context.Context, release *radarr.Releas
 	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
 		"X-Api-Key": {Key: r.apiKey},
 	})
+
 	resp, err := r.api.ReleaseAPI.CreateRelease(authCtx).ReleaseResource(*release).Execute()
 	if err != nil {
 		return err
@@ -166,14 +169,14 @@ func (r *radarrInst) DownloadRelease(ctx context.Context, release *radarr.Releas
 }
 
 func (r *radarrInst) TriggerMovieSearch(ctx context.Context, movieId int32) error {
-	body := map[string]interface{}{
+	body := map[string]any{
 		"name":     "MovieSearch",
 		"movieIds": []int32{movieId},
 	}
 	return r.rawPost(ctx, "/api/v3/command", body)
 }
 
-func (r *radarrInst) rawPost(ctx context.Context, endpoint string, body interface{}) error {
+func (r *radarrInst) rawPost(ctx context.Context, endpoint string, body any) error {
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -218,6 +221,10 @@ func (t *torrentInst) GetFiles(ctx context.Context, hash string) ([]qbittorrent.
 		return nil, nil
 	}
 	return *res, nil
+}
+
+func (t *torrentInst) DeleteTorrent(ctx context.Context, hash string, deleteFiles bool) error {
+	return t.api.DeleteTorrentsCtx(ctx, []string{hash}, deleteFiles)
 }
 
 func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitConfig) *Client {

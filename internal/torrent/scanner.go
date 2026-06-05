@@ -61,6 +61,10 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 		s.UI.UpdateTruncate(fmt.Sprintf("Fetching torrents from %s...", inst.Name()))
 	}
 
+	if err := inst.Api().LoginCtx(ctx); err != nil {
+		return fmt.Errorf("login to client %s: %w", inst.Name(), err)
+	}
+
 	torrents, err := inst.Api().GetTorrentsCtx(ctx, qbittorrent.TorrentFilterOptions{})
 	if err != nil {
 		return err
