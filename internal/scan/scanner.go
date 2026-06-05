@@ -141,7 +141,11 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 			localPath := fsutil.MapPath(absPath, inst.PathMappings())
 
 			// Get Inode for cache
-			inode, _ := fsutil.GetInode(localPath)
+			inode, err := fsutil.GetInode(localPath)
+			if inode == 0 || err != nil {
+				fmt.Fprintf(os.Stderr, "Error getting inode: %v\n", err)
+				continue
+			}
 
 			// Update Media Cache
 			quality := ""

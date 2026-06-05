@@ -56,6 +56,7 @@ type TorrentInstance interface {
 	Name() string
 	Api() *qbittorrent.Client
 	PathMappings() []fsutil.PathMapping
+	GetFiles(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error)
 }
 
 type Client struct {
@@ -155,6 +156,16 @@ type torrentInst struct {
 func (t *torrentInst) Name() string                       { return t.name }
 func (t *torrentInst) Api() *qbittorrent.Client           { return t.api }
 func (t *torrentInst) PathMappings() []fsutil.PathMapping { return t.mappings }
+func (t *torrentInst) GetFiles(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error) {
+	res, err := t.api.GetFilesInformationCtx(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	if res == nil {
+		return nil, nil
+	}
+	return *res, nil
+}
 
 func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitConfig) *Client {
 	c := &Client{}

@@ -3,6 +3,8 @@ package torrent
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/ui"
@@ -73,23 +75,44 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 			s.UI.UpdateTruncate(fmt.Sprintf("Scanning torrent: %s", msg))
 		}
 
-		localPath := fsutil.MapPath(t.ContentPath, inst.PathMappings())
-
-		inode, _ := fsutil.GetInode(localPath)
-
-		isSeeding := t.State == "uploading" || t.State == "stalledUP" || t.State == "forcedUP" || t.State == "queuedUP"
-
-		_, err = s.DB.Exec(`
-			INSERT INTO torrents (client_name, info_hash, file_path, inode, is_seeding, added_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-			ON CONFLICT(client_name, info_hash, file_path) DO UPDATE SET
-				inode = excluded.inode,
-				is_seeding = excluded.is_seeding,
-				added_at = excluded.added_at,
-				updated_at = excluded.updated_at
-		`, inst.Name(), t.Hash, t.ContentPath, inode, isSeeding, t.AddedOn)
+		// Fetch files for this torrent
+		files, err := inst.GetFiles(ctx, t.Hash)
 		if err != nil {
-			return fmt.Errorf("insert torrent: %w", err)
+			// If we fail to get files, at least map the content path
+			if s.Verbose {
+				s.UI.LogPermanent(fmt.Sprintf("Failed to get files for torrent %s: %v", t.Name, err))
+			}
+			files = []qbittorrent.TorrentFile{{Name: ""}}
+		}
+
+		for _, f := range files {
+			relPath := f.Name
+			fullRemotePath := t.ContentPath
+			if relPath != "" {
+				fullRemotePath = filepath.Join(t.SavePath, relPath)
+			}
+
+			localPath := fsutil.MapPath(fullRemotePath, inst.PathMappings())
+			inode, err := fsutil.GetInode(localPath)
+			if inode == 0 || err != nil {
+				fmt.Fprintf(os.Stderr, "Error getting inode: %v\n", err)
+				continue
+			}
+
+			isSeeding := t.State == "uploading" || t.State == "stalledUP" || t.State == "forcedUP" || t.State == "queuedUP"
+
+			_, err = s.DB.Exec(`
+				INSERT INTO torrents (client_name, info_hash, file_path, inode, is_seeding, added_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+				ON CONFLICT(client_name, info_hash, file_path) DO UPDATE SET
+					inode = excluded.inode,
+					is_seeding = excluded.is_seeding,
+					added_at = excluded.added_at,
+					updated_at = excluded.updated_at
+			`, inst.Name(), t.Hash, fullRemotePath, inode, isSeeding, t.AddedOn)
+			if err != nil {
+				return fmt.Errorf("insert torrent file: %w", err)
+			}
 		}
 	}
 

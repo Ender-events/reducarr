@@ -110,7 +110,14 @@ var inspectCmd = &cobra.Command{
 		if len(torrents) == 0 {
 			fmt.Println("  No active torrents found in cache. Run 'reducarr torrent scan'?")
 		} else {
+			// Deduplicate by hash to avoid showing same torrent multiple times
+			seenHashes := make(map[string]bool)
 			for _, t := range torrents {
+				if seenHashes[t.InfoHash] {
+					continue
+				}
+				seenHashes[t.InfoHash] = true
+
 				status := "Seeding"
 				if !t.IsSeeding {
 					status = "Other"
@@ -120,6 +127,39 @@ var inspectCmd = &cobra.Command{
 					addedStr = time.Unix(t.AddedAt, 0).Format("2006-01-02 15:04")
 				}
 				fmt.Printf("  - [%s] %s (%s) - Added: %s\n", status, t.ClientName, t.InfoHash, addedStr)
+
+				// Fetch all files for this torrent
+				allFiles, _ := database.GetTorrentsByHash(t.InfoHash)
+				if len(allFiles) > 0 {
+					fmt.Printf("    Files in torrent:\n")
+					for _, tf := range allFiles {
+						// Check if this file is in media cache to check thresholds
+						m, err := database.GetMediaFileByInode(tf.Inode)
+						inodeStr := fmt.Sprintf("%d", tf.Inode)
+
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "  - inode %d: %v\n", tf.Inode, err)
+							continue
+						}
+
+						if m == nil {
+							continue
+						}
+
+						fInfo := scan.FileInfo{
+							Size:     m.Size,
+							Duration: float64(m.Duration),
+						}
+						isCandidate, _ := scorer.IsCandidate(fInfo)
+						if isCandidate {
+							inodeStr = fmt.Sprintf("\033[31m%d\033[0m", tf.Inode)
+						} else {
+							inodeStr = fmt.Sprintf("\033[32m%d\033[0m", tf.Inode)
+						}
+
+						fmt.Printf("    - [%s] %s\n", inodeStr, tf.FilePath)
+					}
+				}
 			}
 		}
 
