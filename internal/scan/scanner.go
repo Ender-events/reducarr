@@ -153,17 +153,23 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 				quality = arrs.GetString(file.Quality.Quality.Name)
 			}
 
+			seasonNum := int32(0)
+			if file.SeasonNumber != nil {
+				seasonNum = *file.SeasonNumber
+			}
+
 			err = s.DB.UpsertMediaFile(db.MediaFileRecord{
-				ArrInstance: inst.Name(),
-				ArrType:     "sonarr",
-				ItemID:      *series.Id,
-				FileID:      *file.Id,
-				Path:        absPath, // Keep remote path in DB for Arrs matching
-				Title:       title,
-				Inode:       inode,
-				Size:        info.Size,
-				Duration:    int64(duration),
-				Quality:     quality,
+				ArrInstance:  inst.Name(),
+				ArrType:      "sonarr",
+				ItemID:       *series.Id,
+				FileID:       *file.Id,
+				Path:         absPath, // Keep remote path in DB for Arrs matching
+				Title:        title,
+				Inode:        inode,
+				Size:         info.Size,
+				Duration:     int64(duration),
+				Quality:      quality,
+				SeasonNumber: seasonNum,
 			})
 			if err != nil {
 				return fmt.Errorf("upsert media file: %w", err)
@@ -274,16 +280,17 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 			}
 
 			err = s.DB.UpsertMediaFile(db.MediaFileRecord{
-				ArrInstance: inst.Name(),
-				ArrType:     "radarr",
-				ItemID:      *movie.Id,
-				FileID:      *movie.MovieFile.Id,
-				Path:        absPath,
-				Title:       title,
-				Inode:       inode,
-				Size:        info.Size,
-				Duration:    int64(duration),
-				Quality:     quality,
+				ArrInstance:  inst.Name(),
+				ArrType:      "radarr",
+				ItemID:       *movie.Id,
+				FileID:       *movie.MovieFile.Id,
+				Path:         absPath,
+				Title:        title,
+				Inode:        inode,
+				Size:         info.Size,
+				Duration:     int64(duration),
+				Quality:      quality,
+				SeasonNumber: 0,
 			})
 			if err != nil {
 				return fmt.Errorf("upsert media file: %w", err)

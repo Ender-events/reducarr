@@ -13,23 +13,26 @@ import (
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/devopsarr/radarr-go/radarr"
+	"github.com/devopsarr/sonarr-go/sonarr"
 	"github.com/dustin/go-humanize"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
 type displayItem struct {
-	Title       string
-	Size        string
-	ArrInstance string
-	ArrType     string
-	Path        string
-	Quality     string
-	Reason      string
-	Torrents    string
-	ID          int32
-	ItemID      int32
-	IsExit      bool
+	Title        string
+	Size         string
+	ArrInstance  string
+	ArrType      string
+	Path         string
+	Quality      string
+	Reason       string
+	Torrents     string
+	ID           int32 // FileID
+	ItemID       int32 // SeriesID or MovieID
+	SeasonNumber int32
+	Inode        uint64
+	IsExit       bool
 }
 
 var candidatesCmd = &cobra.Command{
@@ -67,6 +70,7 @@ var candidatesCmd = &cobra.Command{
 {{ "Size:" | faint }}	{{ .Size }}
 {{ "Quality:" | faint }}	{{ .Quality }}
 {{ "Reason:" | faint }}	{{ .Reason | red }}
+{{ "Inode:" | faint }}	{{ .Inode }}
 {{ "Torrents:" | faint }}
 {{ .Torrents }}`,
 			}
@@ -90,16 +94,18 @@ var candidatesCmd = &cobra.Command{
 				}
 
 				items[i] = displayItem{
-					Title:       c.Title,
-					Size:        humanize.Bytes(uint64(c.Size)),
-					ArrInstance: c.ArrInstance,
-					ArrType:     c.ArrType,
-					Path:        c.Path,
-					Quality:     c.Quality,
-					Reason:      c.Reason,
-					Torrents:    torrentLine,
-					ID:          c.FileID,
-					ItemID:      c.ItemID,
+					Title:        c.Title,
+					Size:         humanize.Bytes(uint64(c.Size)),
+					ArrInstance:  c.ArrInstance,
+					ArrType:      c.ArrType,
+					Path:         c.Path,
+					Quality:      c.Quality,
+					Reason:       c.Reason,
+					Torrents:     torrentLine,
+					ID:           c.FileID,
+					ItemID:       c.ItemID,
+					SeasonNumber: c.SeasonNumber,
+					Inode:        c.Inode,
 				}
 			}
 			items[len(candidates)] = displayItem{
@@ -159,7 +165,7 @@ var candidatesCmd = &cobra.Command{
 				if selected.ArrType == "radarr" {
 					searchForRadarrAlternatives(selected, database)
 				} else {
-					fmt.Println("Interactive search for Sonarr is not yet implemented.")
+					searchForSonarrAlternatives(selected, database)
 				}
 			case "Ignore":
 				fmt.Printf("Ignoring: %s (Not yet implemented)\n", selected.Title)
@@ -172,8 +178,7 @@ var candidatesCmd = &cobra.Command{
 	},
 }
 
-func searchForRadarrAlternatives(item displayItem, database *db.DB) {
-	// 1. Setup Client
+func getArrClient() *arrs.Client {
 	sonarrInstances := make([]arrs.ArrInstance, len(cfg.Sonarr))
 	for i, s := range cfg.Sonarr {
 		sonarrInstances[i] = arrs.ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey, PathMappings: s.PathMappings}
@@ -182,22 +187,190 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB) {
 	for i, r := range cfg.Radarr {
 		radarrInstances[i] = arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey, PathMappings: r.PathMappings}
 	}
-	client := arrs.NewClient(sonarrInstances, radarrInstances, nil)
+	return arrs.NewClient(sonarrInstances, radarrInstances, nil)
+}
 
+func showTorrentContext(item displayItem, database *db.DB) {
+	torrentRecords, _ := database.GetTorrentsByInode(item.Inode)
+	if len(torrentRecords) > 0 {
+		fmt.Printf("\n--- Files in current Torrent ---\n")
+		seenFiles := make(map[string]bool)
+		for _, t := range torrentRecords {
+			allFiles, _ := database.GetTorrentsByHash(t.InfoHash)
+			for _, tf := range allFiles {
+				if seenFiles[tf.FilePath] {
+					continue
+				}
+				seenFiles[tf.FilePath] = true
+
+				status := "\033[33m[Unknown]\033[0m"
+				m, _ := database.GetMediaFileByInode(tf.Inode)
+				if m != nil {
+					if isCandidate(m.FileID, m.ArrInstance, database) {
+						status = fmt.Sprintf("\033[31m[%d]\033[0m", m.FileID)
+					} else {
+						status = fmt.Sprintf("\033[32m[%d]\033[0m", m.FileID)
+					}
+				}
+				fmt.Printf("  %s %s\n", status, tf.FilePath)
+			}
+		}
+		fmt.Println()
+	}
+}
+
+type genericRelease struct {
+	Title      string
+	Size       int64
+	Indexer    string
+	Seeders    int32
+	Quality    string
+	Protocol   string
+	Rejections []string
+	Score      *int32
+	Raw        interface{}
+}
+
+func sortAndSelectRelease(releases []genericRelease, item displayItem, database *db.DB) interface{} {
+	if len(releases) == 0 {
+		fmt.Println("No releases found.")
+		return nil
+	}
+
+	// 1. Sort
+	sort.Slice(releases, func(i, j int) bool {
+		iApproved := len(releases[i].Rejections) == 0
+		jApproved := len(releases[j].Rejections) == 0
+		if iApproved != jApproved {
+			return iApproved
+		}
+
+		ci := getScore(releases[i].Score)
+		cj := getScore(releases[j].Score)
+		if ci != cj {
+			return ci > cj
+		}
+
+		si := getRejectionSeverity(releases[i].Rejections)
+		sj := getRejectionSeverity(releases[j].Rejections)
+		if si != sj {
+			return si < sj
+		}
+
+		return releases[i].Size < releases[j].Size
+	})
+
+	// 2. Templates
+	templates := &promptui.SelectTemplates{
+		Label:    "{{ . }}",
+		Active:   "\033[31m▶\033[0m {{ .Title | cyan }} [{{ .ScoreStr | magenta }}] | {{ .SizeStr | yellow }} | {{ .Indexer | green }}",
+		Inactive: "  {{ .Title | cyan }} [{{ .ScoreStr | magenta }}] | {{ .SizeStr | yellow }} | {{ .Indexer | green }}",
+		Details: `
+--------- Release Details ---------
+{{ "Indexer:" | faint }}   {{ .Indexer }}
+{{ "Score:" | faint }}     {{ .ScoreStr }}
+{{ "Size:" | faint }}      {{ .SizeStr }}
+{{ "Seeders:" | faint }}   {{ .Seeders }}
+{{ "Quality:" | faint }}   {{ .Quality }}
+{{ "Protocol:" | faint }}  {{ .Protocol }}
+{{ if .RejectionsStr }}{{ "REJECTED:" | red }}  {{ .RejectionsStr }}{{ end }}`,
+	}
+
+	type displayRelease struct {
+		Title         string
+		SizeStr       string
+		Indexer       string
+		Seeders       int32
+		Quality       string
+		Protocol      string
+		RejectionsStr string
+		ScoreStr      string
+		Raw           interface{}
+	}
+
+	displayItems := make([]displayRelease, len(releases))
+	for i, r := range releases {
+		scoreStr := "n/a"
+		if r.Score != nil {
+			scoreStr = fmt.Sprintf("%d", *r.Score)
+		}
+
+		displayItems[i] = displayRelease{
+			Title:         r.Title,
+			SizeStr:       humanize.Bytes(uint64(r.Size)),
+			Indexer:       r.Indexer,
+			Seeders:       r.Seeders,
+			Quality:       r.Quality,
+			Protocol:      r.Protocol,
+			RejectionsStr: strings.Join(r.Rejections, ", "),
+			ScoreStr:      scoreStr,
+			Raw:           r.Raw,
+		}
+	}
+
+	prompt := promptui.Select{
+		Label:     "Select a release to grab",
+		Items:     displayItems,
+		Templates: templates,
+		Size:      10,
+	}
+
+	idx, _, err := prompt.Run()
+	if err != nil {
+		return nil
+	}
+
+	selected := displayItems[idx]
+
+	// 3. Multi-file Warning (Common logic)
+	torrentRecords, _ := database.GetTorrentsByInode(item.Inode)
+	nonCandidates := 0
+	for _, t := range torrentRecords {
+		allFiles, _ := database.GetTorrentsByHash(t.InfoHash)
+		for _, tf := range allFiles {
+			m, _ := database.GetMediaFileByInode(tf.Inode)
+			if m != nil && !isCandidate(m.FileID, m.ArrInstance, database) {
+				nonCandidates++
+			}
+		}
+	}
+
+	if nonCandidates > 0 {
+		fmt.Printf("\n\033[33m⚠ WARNING\033[0m: This torrent contains %d files that are already optimized.\n", nonCandidates)
+		fmt.Println("Replacing this torrent will replace them anyway.")
+	}
+
+	// 4. Confirm
+	confirmPrompt := promptui.Prompt{
+		Label:     fmt.Sprintf("Grab '%s' and replace current files?", selected.Title),
+		IsConfirm: true,
+	}
+
+	_, err = confirmPrompt.Run()
+	if err != nil {
+		return nil
+	}
+
+	return selected.Raw
+}
+
+func searchForRadarrAlternatives(item displayItem, database *db.DB) {
+	client := getArrClient()
 	inst := client.FindRadarr(item.ArrInstance)
 	if inst == nil {
 		fmt.Printf("Error: could not find Radarr instance %s\n", item.ArrInstance)
 		return
 	}
 
-	// 2. Trigger Search
+	showTorrentContext(item, database)
+
 	spinner := ui.NewSpinner(fmt.Sprintf("Searching for releases for: %s...", item.Title))
 	spinner.Start()
 
 	ctx := context.Background()
-	_ = inst.TriggerMovieSearch(ctx, item.ItemID) // Trigger refresh
+	_ = inst.TriggerMovieSearch(ctx, item.ItemID)
 
-	releases, err := inst.ListReleases(ctx, item.ItemID)
+	rawReleases, err := inst.ListReleases(ctx, item.ItemID)
 	spinner.Stop()
 
 	if err != nil {
@@ -205,79 +378,16 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB) {
 		return
 	}
 
-	if len(releases) == 0 {
-		fmt.Println("No releases found.")
-		return
-	}
-
-	// 3. Improved Sort
-	sort.Slice(releases, func(i, j int) bool {
-		// Priority 1: Rejection Status (Approved first)
-		iApproved := len(releases[i].Rejections) == 0
-		jApproved := len(releases[j].Rejections) == 0
-		if iApproved != jApproved {
-			return iApproved // True (Approved) comes first
-		}
-
-		// Priority 2: CustomFormatScore (Higher is better)
-		ci := getScore(releases[i].CustomFormatScore)
-		cj := getScore(releases[j].CustomFormatScore)
-		if ci != cj {
-			return ci > cj
-		}
-
-		// Priority 3: Rejection Severity (Lower is better)
-		si := getRejectionSeverity(releases[i].Rejections)
-		sj := getRejectionSeverity(releases[j].Rejections)
-		if si != sj {
-			return si < sj
-		}
-
-		// Priority 4: Size (Smaller is better)
-		return *releases[i].Size < *releases[j].Size
-	})
-
-	// 4. Selection Menu
-	templates := &promptui.SelectTemplates{
-		Label:    "{{ . }}",
-		Active:   "\033[31m▶\033[0m {{ .Title | cyan }} [{{ .Score | magenta }}] | {{ .SizeStr | yellow }} | {{ .Indexer | green }}",
-		Inactive: "  {{ .Title | cyan }} [{{ .Score | magenta }}] | {{ .SizeStr | yellow }} | {{ .Indexer | green }}",
-		Details: `
---------- Release Details ---------
-{{ "Indexer:" | faint }}	{{ .Indexer }}
-{{ "Score:" | faint }}	{{ .Score }}
-{{ "Size:" | faint }}	{{ .SizeStr }}
-{{ "Seeders:" | faint }}	{{ .Seeders }}
-{{ "Quality:" | faint }}	{{ .Quality }}
-{{ "Protocol:" | faint }}	{{ .Protocol }}
-{{ if .Rejections }}{{ "REJECTED:" | red }}	{{ .Rejections }}{{ end }}`,
-	}
-
-	type releaseItem struct {
-		Title      string
-		SizeStr    string
-		Indexer    string
-		Seeders    string
-		Quality    string
-		Protocol   string
-		Rejections string
-		Score      string
-		Raw        *radarr.ReleaseResource
-	}
-
-	displayReleases := make([]releaseItem, len(releases))
-	for i, r := range releases {
+	releases := make([]genericRelease, len(rawReleases))
+	for i, r := range rawReleases {
 		quality := ""
 		if r.Quality != nil && r.Quality.Quality != nil {
 			quality = arrs.GetStringRadarr(r.Quality.Quality.Name)
 		}
 
-		indexer := arrs.GetStringRadarr(r.Indexer)
-		title := arrs.GetStringRadarr(r.Title)
-
-		seeders := "0"
+		seeders := int32(0)
 		if r.Seeders.Get() != nil {
-			seeders = fmt.Sprintf("%d", *r.Seeders.Get())
+			seeders = *r.Seeders.Get()
 		}
 
 		protocol := "unknown"
@@ -285,60 +395,152 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB) {
 			protocol = string(*r.Protocol)
 		}
 
-		scoreStr := "no value"
-		if r.CustomFormatScore != nil {
-			scoreStr = fmt.Sprintf("%d", *r.CustomFormatScore)
-		}
-
-		displayReleases[i] = releaseItem{
-			Title:      title,
-			SizeStr:    humanize.Bytes(uint64(*r.Size)),
-			Indexer:    indexer,
+		releases[i] = genericRelease{
+			Title:      arrs.GetStringRadarr(r.Title),
+			Size:       *r.Size,
+			Indexer:    arrs.GetStringRadarr(r.Indexer),
 			Seeders:    seeders,
 			Quality:    quality,
 			Protocol:   protocol,
-			Rejections: strings.Join(r.Rejections, ", "),
-			Score:      scoreStr,
-			Raw:        &releases[i],
+			Rejections: r.Rejections,
+			Score:      r.CustomFormatScore,
+			Raw:        &rawReleases[i],
 		}
 	}
 
-	prompt := promptui.Select{
-		Label:     "Select a release to grab",
-		Items:     displayReleases,
-		Templates: templates,
-		Size:      10,
-	}
-
-	index, _, err := prompt.Run()
-	if err != nil {
+	selectedRaw := sortAndSelectRelease(releases, item, database)
+	if selectedRaw == nil {
 		return
 	}
 
-	selected := displayReleases[index]
-
-	// 5. Confirm and Grab
-	confirmPrompt := promptui.Prompt{
-		Label:     fmt.Sprintf("Grab '%s' and replace current file?", selected.Title),
-		IsConfirm: true,
-	}
-
-	_, err = confirmPrompt.Run()
-	if err != nil {
-		return
-	}
-
-	// TODO: Phase 4 Deletion logic would go here.
-	// For now, we just trigger the grab.
-
-	fmt.Printf("Grabbing release: %s...\n", selected.Title)
-	err = inst.DownloadRelease(ctx, selected.Raw)
+	selected := selectedRaw.(*radarr.ReleaseResource)
+	fmt.Printf("Grabbing release: %s...\n", arrs.GetStringRadarr(selected.Title))
+	err = inst.DownloadRelease(ctx, selected)
 	if err != nil {
 		fmt.Printf("Error grabbing release: %v\n", err)
 		return
 	}
 
 	fmt.Println("\033[32m✔\033[0m Successfully triggered grab in Radarr.")
+}
+
+func searchForSonarrAlternatives(item displayItem, database *db.DB) {
+	client := getArrClient()
+	inst := client.FindSonarr(item.ArrInstance)
+	if inst == nil {
+		fmt.Printf("Error: could not find Sonarr instance %s\n", item.ArrInstance)
+		return
+	}
+
+	showTorrentContext(item, database)
+
+	ctx := context.Background()
+
+	scopePrompt := promptui.Select{
+		Label: "Select search scope",
+		Items: []string{
+			"Search each episode individually",
+			fmt.Sprintf("Search complete season (S%02d)", item.SeasonNumber),
+			"Search entire series",
+			"Back",
+		},
+	}
+
+	scopeIdx, scope, err := scopePrompt.Run()
+	if err != nil || scope == "Back" {
+		return
+	}
+
+	spinner := ui.NewSpinner(fmt.Sprintf("Searching for releases (%s)...", scope))
+	spinner.Start()
+
+	var rawReleases []sonarr.ReleaseResource
+	var fetchErr error
+
+	switch scopeIdx {
+	case 0: // Individual
+		episodes, err := inst.ListEpisodes(ctx, item.ItemID)
+		if err != nil {
+			fetchErr = fmt.Errorf("list episodes: %w", err)
+		} else {
+			var episodeID int32
+			for _, ep := range episodes {
+				if ep.EpisodeFileId != nil && *ep.EpisodeFileId == item.ID {
+					if ep.Id != nil {
+						episodeID = *ep.Id
+						break
+					}
+				}
+			}
+			if episodeID == 0 {
+				fetchErr = fmt.Errorf("could not find episode associated with file ID %d", item.ID)
+			} else {
+				rawReleases, fetchErr = inst.ListReleases(ctx, &episodeID, nil, nil)
+			}
+		}
+	case 1: // Season
+		rawReleases, fetchErr = inst.ListReleases(ctx, nil, &item.ItemID, &item.SeasonNumber)
+	case 2: // Series
+		rawReleases, fetchErr = inst.ListReleases(ctx, nil, &item.ItemID, nil)
+	}
+
+	spinner.Stop()
+
+	if fetchErr != nil {
+		fmt.Printf("Error fetching releases: %v\n", fetchErr)
+		return
+	}
+
+	releases := make([]genericRelease, len(rawReleases))
+	for i, r := range rawReleases {
+		quality := ""
+		if r.Quality != nil && r.Quality.Quality != nil {
+			quality = arrs.GetString(r.Quality.Quality.Name)
+		}
+
+		seeders := int32(0)
+		if r.Seeders.Get() != nil {
+			seeders = *r.Seeders.Get()
+		}
+
+		protocol := "unknown"
+		if r.Protocol != nil {
+			protocol = string(*r.Protocol)
+		}
+
+		releases[i] = genericRelease{
+			Title:      arrs.GetString(r.Title),
+			Size:       *r.Size,
+			Indexer:    arrs.GetString(r.Indexer),
+			Seeders:    seeders,
+			Quality:    quality,
+			Protocol:   protocol,
+			Rejections: r.Rejections,
+			Score:      r.CustomFormatScore,
+			Raw:        &rawReleases[i],
+		}
+	}
+
+	selectedRaw := sortAndSelectRelease(releases, item, database)
+	if selectedRaw == nil {
+		return
+	}
+
+	selected := selectedRaw.(*sonarr.ReleaseResource)
+	fmt.Printf("Grabbing release: %s...\n", arrs.GetString(selected.Title))
+	err = inst.DownloadRelease(ctx, selected)
+	if err != nil {
+		fmt.Printf("Error grabbing release: %v\n", err)
+		return
+	}
+
+	fmt.Println("\033[32m✔\033[0m Successfully triggered grab in Sonarr.")
+}
+
+func isCandidate(fileID int32, instance string, database *db.DB) bool {
+	var exists bool
+	_ = database.QueryRow("SELECT EXISTS(SELECT 1 FROM candidates WHERE file_id = ? AND arr_instance = ?)", fileID, instance).Scan(&exists)
+	return exists
 }
 
 func getScore(s *int32) int32 {

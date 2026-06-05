@@ -58,6 +58,7 @@ func (d *DB) migrate() error {
 			size INTEGER,
 			duration INTEGER,
 			quality TEXT,
+			season_number INTEGER,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (arr_instance, file_id)
 		);`,
@@ -81,27 +82,29 @@ func (d *DB) migrate() error {
 
 	// Dynamic migration for added_at if table already exists
 	_, _ = d.Exec("ALTER TABLE torrents ADD COLUMN added_at INTEGER")
+	_, _ = d.Exec("ALTER TABLE media_files ADD COLUMN season_number INTEGER")
 
 	return nil
 }
 
 type MediaFileRecord struct {
-	ArrInstance string
-	ArrType     string
-	ItemID      int32
-	FileID      int32
-	Path        string
-	Title       string
-	Inode       uint64
-	Size        int64
-	Duration    int64
-	Quality     string
+	ArrInstance  string
+	ArrType      string
+	ItemID       int32 // MovieID or SeriesID
+	FileID       int32
+	Path         string
+	Title        string
+	Inode        uint64
+	Size         int64
+	Duration     int64
+	Quality      string
+	SeasonNumber int32
 }
 
 func (d *DB) UpsertMediaFile(r MediaFileRecord) error {
 	_, err := d.Exec(`
-		INSERT INTO media_files (arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO media_files (arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, season_number, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(arr_instance, file_id) DO UPDATE SET
 			item_id = excluded.item_id,
 			path = excluded.path,
@@ -110,8 +113,9 @@ func (d *DB) UpsertMediaFile(r MediaFileRecord) error {
 			size = excluded.size,
 			duration = excluded.duration,
 			quality = excluded.quality,
+			season_number = excluded.season_number,
 			updated_at = excluded.updated_at
-	`, r.ArrInstance, r.ArrType, r.ItemID, r.FileID, r.Path, r.Title, r.Inode, r.Size, r.Duration, r.Quality)
+	`, r.ArrInstance, r.ArrType, r.ItemID, r.FileID, r.Path, r.Title, r.Inode, r.Size, r.Duration, r.Quality, r.SeasonNumber)
 	return err
 }
 
@@ -133,7 +137,7 @@ type CandidateRecord struct {
 
 func (d *DB) GetCandidatesWithMedia() ([]CandidateRecord, error) {
 	rows, err := d.Query(`
-		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, c.reason
+		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason
 		FROM candidates c
 		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
 		ORDER BY m.size DESC
@@ -146,7 +150,7 @@ func (d *DB) GetCandidatesWithMedia() ([]CandidateRecord, error) {
 	var records []CandidateRecord
 	for rows.Next() {
 		var r CandidateRecord
-		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.Reason); err != nil {
+		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber, &r.Reason); err != nil {
 			return nil, err
 		}
 		records = append(records, r)
@@ -232,9 +236,9 @@ func (d *DB) GetMediaFileByInode(inode uint64) (*MediaFileRecord, error) {
 	}
 	var r MediaFileRecord
 	err := d.QueryRow(`
-		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality
+		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, season_number
 		FROM media_files WHERE inode = ?`, inode).
-		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality)
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -247,9 +251,9 @@ func (d *DB) GetMediaFileByInode(inode uint64) (*MediaFileRecord, error) {
 func (d *DB) GetMediaFileByPath(path string) (*MediaFileRecord, error) {
 	var r MediaFileRecord
 	err := d.QueryRow(`
-		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality
+		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, season_number
 		FROM media_files WHERE path = ?`, path).
-		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality)
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

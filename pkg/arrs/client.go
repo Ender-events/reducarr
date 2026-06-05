@@ -40,6 +40,10 @@ type SonarrInstance interface {
 	ApiKey() string
 	Api() *sonarr.APIClient
 	PathMappings() []fsutil.PathMapping
+	ListReleases(ctx context.Context, episodeId *int32, seriesId *int32, seasonNumber *int32) ([]sonarr.ReleaseResource, error)
+	DownloadRelease(ctx context.Context, release *sonarr.ReleaseResource) error
+	GetEpisodeFile(ctx context.Context, fileId int32) (*sonarr.EpisodeFileResource, error)
+	ListEpisodes(ctx context.Context, seriesId int32) ([]sonarr.EpisodeResource, error)
 }
 
 type RadarrInstance interface {
@@ -67,6 +71,7 @@ type Client struct {
 
 type sonarrInst struct {
 	name     string
+	url      string
 	apiKey   string
 	api      *sonarr.APIClient
 	mappings []fsutil.PathMapping
@@ -76,6 +81,54 @@ func (s *sonarrInst) Name() string                       { return s.name }
 func (s *sonarrInst) ApiKey() string                     { return s.apiKey }
 func (s *sonarrInst) Api() *sonarr.APIClient             { return s.api }
 func (s *sonarrInst) PathMappings() []fsutil.PathMapping { return s.mappings }
+
+func (s *sonarrInst) ListReleases(ctx context.Context, episodeId *int32, seriesId *int32, seasonNumber *int32) ([]sonarr.ReleaseResource, error) {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	req := s.api.ReleaseAPI.ListRelease(authCtx)
+	if episodeId != nil {
+		req = req.EpisodeId(*episodeId)
+	}
+	if seriesId != nil {
+		req = req.SeriesId(*seriesId)
+	}
+	if seasonNumber != nil {
+		req = req.SeasonNumber(*seasonNumber)
+	}
+	releases, _, err := req.Execute()
+	return releases, err
+}
+
+func (s *sonarrInst) DownloadRelease(ctx context.Context, release *sonarr.ReleaseResource) error {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	resp, err := s.api.ReleaseAPI.CreateRelease(authCtx).ReleaseResource(*release).Execute()
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (s *sonarrInst) GetEpisodeFile(ctx context.Context, fileId int32) (*sonarr.EpisodeFileResource, error) {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	file, _, err := s.api.EpisodeFileAPI.GetEpisodeFileById(authCtx, fileId).Execute()
+	return file, err
+}
+
+func (s *sonarrInst) ListEpisodes(ctx context.Context, seriesId int32) ([]sonarr.EpisodeResource, error) {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	episodes, _, err := s.api.EpisodeAPI.ListEpisode(authCtx).SeriesId(seriesId).Execute()
+	return episodes, err
+}
 
 type radarrInst struct {
 	name     string
@@ -175,6 +228,7 @@ func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitCon
 		sc.Servers = sonarr.ServerConfigurations{{URL: cfg.URL}}
 		c.Sonarr = append(c.Sonarr, &sonarrInst{
 			name:     cfg.Name,
+			url:      cfg.URL,
 			apiKey:   cfg.APIKey,
 			api:      sonarr.NewAPIClient(sc),
 			mappings: cfg.PathMappings,
