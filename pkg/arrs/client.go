@@ -44,6 +44,7 @@ type SonarrInstance interface {
 	DownloadRelease(ctx context.Context, release *sonarr.ReleaseResource) error
 	GetEpisodeFile(ctx context.Context, fileId int32) (*sonarr.EpisodeFileResource, error)
 	ListEpisodes(ctx context.Context, seriesId int32) ([]sonarr.EpisodeResource, error)
+	DeleteEpisodeFile(ctx context.Context, fileId int32) error
 }
 
 type RadarrInstance interface {
@@ -54,6 +55,7 @@ type RadarrInstance interface {
 	ListReleases(ctx context.Context, movieId int32) ([]radarr.ReleaseResource, error)
 	DownloadRelease(ctx context.Context, release *radarr.ReleaseResource) error
 	TriggerMovieSearch(ctx context.Context, movieId int32) error
+	DeleteMovieFile(ctx context.Context, fileId int32) error
 }
 
 type TorrentInstance interface {
@@ -132,6 +134,14 @@ func (s *sonarrInst) ListEpisodes(ctx context.Context, seriesId int32) ([]sonarr
 	return episodes, err
 }
 
+func (s *sonarrInst) DeleteEpisodeFile(ctx context.Context, fileId int32) error {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	_, err := s.api.EpisodeFileAPI.DeleteEpisodeFile(authCtx, fileId).Execute()
+	return err
+}
+
 type radarrInst struct {
 	name     string
 	url      string
@@ -174,6 +184,14 @@ func (r *radarrInst) TriggerMovieSearch(ctx context.Context, movieId int32) erro
 		"movieIds": []int32{movieId},
 	}
 	return r.rawPost(ctx, "/api/v3/command", body)
+}
+
+func (r *radarrInst) DeleteMovieFile(ctx context.Context, fileId int32) error {
+	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
+		"X-Api-Key": {Key: r.apiKey},
+	})
+	_, err := r.api.MovieFileAPI.DeleteMovieFile(authCtx, fileId).Execute()
+	return err
 }
 
 func (r *radarrInst) rawPost(ctx context.Context, endpoint string, body any) error {

@@ -212,6 +212,24 @@ func (d *DB) GetTorrentsByInode(inode uint64) ([]TorrentRecord, error) {
 	return records, nil
 }
 
+func (d *DB) GetTorrentsByPath(path string) ([]TorrentRecord, error) {
+	rows, err := d.Query("SELECT client_name, info_hash, file_path, inode, is_seeding, added_at FROM torrents WHERE file_path = ?", path)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []TorrentRecord
+	for rows.Next() {
+		var r TorrentRecord
+		if err := rows.Scan(&r.ClientName, &r.InfoHash, &r.FilePath, &r.Inode, &r.IsSeeding, &r.AddedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
 func (d *DB) GetTorrentsByHash(hash string) ([]TorrentRecord, error) {
 	rows, err := d.Query("SELECT client_name, info_hash, file_path, inode, is_seeding, added_at FROM torrents WHERE info_hash = ?", hash)
 	if err != nil {
@@ -279,4 +297,14 @@ func (d *DB) GetAllTorrents() ([]TorrentRecord, error) {
 		records = append(records, r)
 	}
 	return records, nil
+}
+
+func (d *DB) DeleteMediaFile(arrInstance string, fileID int32) error {
+	_, err := d.Exec("DELETE FROM media_files WHERE arr_instance = ? AND file_id = ?", arrInstance, fileID)
+	return err
+}
+
+func (d *DB) DeleteTorrentByHash(clientName, hash string) error {
+	_, err := d.Exec("DELETE FROM torrents WHERE client_name = ? AND info_hash = ?", clientName, hash)
+	return err
 }

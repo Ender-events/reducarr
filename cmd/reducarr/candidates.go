@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/Ender-events/reducarr/internal/orchestrator"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/devopsarr/radarr-go/radarr"
@@ -32,6 +33,7 @@ type displayItem struct {
 	ItemID       int32 // SeriesID or MovieID
 	SeasonNumber int32
 	Inode        uint64
+	Record       db.CandidateRecord
 	IsExit       bool
 }
 
@@ -116,6 +118,7 @@ var candidatesCmd = &cobra.Command{
 					ItemID:       c.ItemID,
 					SeasonNumber: c.SeasonNumber,
 					Inode:        c.Inode,
+					Record:       c,
 				}
 			}
 			items[len(candidates)] = displayItem{
@@ -158,7 +161,7 @@ var candidatesCmd = &cobra.Command{
 			// Action Menu
 			actionPrompt := promptui.Select{
 				Label: fmt.Sprintf("Action for: %s", selected.Title),
-				Items: []string{"Search for Alternatives", "Ignore", "Back", "Exit"},
+				Items: []string{"Search for Alternatives", "Delete (No replacement)", "Ignore", "Back", "Exit"},
 			}
 
 			_, action, err := actionPrompt.Run()
@@ -170,12 +173,26 @@ var candidatesCmd = &cobra.Command{
 				return
 			}
 
+			orch := orchestrator.New(database, getClient(), dryRun, verbose)
+
 			switch action {
 			case "Search for Alternatives":
 				if selected.ArrType == "radarr" {
-					searchForRadarrAlternatives(selected, database)
+					searchForRadarrAlternatives(selected, database, orch)
 				} else {
-					searchForSonarrAlternatives(selected, database)
+					searchForSonarrAlternatives(selected, database, orch)
+				}
+			case "Delete (No replacement)":
+				confirm := promptui.Prompt{
+					Label:     fmt.Sprintf("Are you sure you want to delete '%s' and ALL associated files/torrents?", selected.Title),
+					IsConfirm: true,
+				}
+				if _, err := confirm.Run(); err == nil {
+					if err := orch.DeleteCandidate(context.Background(), selected.Record); err != nil {
+						fmt.Printf("\033[31m✘\033[0m Error deleting candidate: %v\n", err)
+					} else {
+						fmt.Println("\033[32m✔\033[0m Successfully deleted candidate and all associated files.")
+					}
 				}
 			case "Ignore":
 				fmt.Printf("Ignoring: %s (Not yet implemented)\n", selected.Title)
@@ -375,73 +392,7 @@ func sortAndSelectRelease(releases []genericRelease, item displayItem, database 
 	return selected.Raw
 }
 
-func deleteAssociatedTorrents(ctx context.Context, item displayItem, database *db.DB, client *arrs.Client) error {
-	torrentRecords, err := database.GetTorrentsByInode(item.Inode)
-	if err != nil {
-		return fmt.Errorf("fetch torrents from DB: %w", err)
-	}
-
-	if verbose {
-		for _, tr := range torrentRecords {
-			fmt.Printf("  \033[34mℹ\033[0m Deleting associated torrent %s (%s) in client %s\n", tr.InfoHash, tr.FilePath, tr.ClientName)
-		}
-	}
-
-	for _, tr := range torrentRecords {
-		// 1. Cross-seed check: find OTHER torrents sharing ANY file of THIS torrent
-		allFilesOfThisTorrent, err := database.GetTorrentsByHash(tr.InfoHash)
-		if err != nil {
-			fmt.Printf("  \033[33m⚠\033[0m Could not verify cross-seeds for %s, skipping deletion.\n", tr.InfoHash)
-			continue
-		}
-
-		safeToDeleteFiles := true
-		for _, file := range allFilesOfThisTorrent {
-			otherTorrents, _ := database.GetTorrentsByInode(file.Inode)
-			for _, ot := range otherTorrents {
-				if ot.InfoHash != tr.InfoHash {
-					// Found another torrent using one of our files!
-					safeToDeleteFiles = false
-					fmt.Printf("  \033[34mℹ\033[0m Cross-seed detected for %s (shared with %s). Torrent will be removed WITHOUT deleting files.\n", tr.InfoHash, ot.InfoHash)
-					break
-				}
-			}
-			if !safeToDeleteFiles {
-				break
-			}
-		}
-
-		if len(client.Torrents) == 0 {
-			fmt.Printf("  \033[33m⚠\033[0m No torrents found in client %s to delete.\n", tr.ClientName)
-			continue
-		}
-
-		// 2. Perform deletion
-		for _, tInst := range client.Torrents {
-			if tInst.Name() == tr.ClientName {
-				if dryRun {
-					fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent: %s (Client: %s, DeleteFiles: %v)\n", tr.InfoHash[:8], tr.ClientName, safeToDeleteFiles)
-					break
-				}
-
-				// Login before delete
-				if err := tInst.Api().LoginCtx(ctx); err != nil {
-					return fmt.Errorf("login to client %s: %w", tr.ClientName, err)
-				}
-
-				fmt.Printf("  Removing torrent: %s (Client: %s, DeleteFiles: %v)...\n", tr.InfoHash[:8], tr.ClientName, safeToDeleteFiles)
-				err := tInst.DeleteTorrent(ctx, tr.InfoHash, safeToDeleteFiles)
-				if err != nil {
-					return fmt.Errorf("delete torrent %s: %w", tr.InfoHash, err)
-				}
-				break
-			}
-		}
-	}
-	return nil
-}
-
-func searchForRadarrAlternatives(item displayItem, database *db.DB) {
+func searchForRadarrAlternatives(item displayItem, database *db.DB, orch *orchestrator.Orchestrator) {
 	client := getClient()
 	inst := client.FindRadarr(item.ArrInstance)
 	if inst == nil {
@@ -502,29 +453,15 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB) {
 
 	selected := selectedRaw.(*radarr.ReleaseResource)
 
-	// 1. Delete associated torrents FIRST
-	fmt.Printf("Cleaning up current torrents for: %s...\n", item.Title)
-	if err := deleteAssociatedTorrents(ctx, item, database, client); err != nil {
-		fmt.Printf("\033[31m✘\033[0m Warning: failed to delete torrents: %v. Continuing with grab...\n", err)
-	}
-
-	// 2. Trigger grab
-	if dryRun {
-		fmt.Printf("\033[33m[DRY-RUN]\033[0m Would grabbing release: %s\n", arrs.GetStringRadarr(selected.Title))
+	if err := orch.UpgradeCandidate(ctx, item.Record, selected); err != nil {
+		fmt.Printf("\033[31m✘\033[0m Error during upgrade: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Grabbing release: %s...\n", arrs.GetStringRadarr(selected.Title))
-	err = inst.DownloadRelease(ctx, selected)
-	if err != nil {
-		fmt.Printf("Error grabbing release: %v\n", err)
-		return
-	}
-
-	fmt.Println("\033[32m✔\033[0m Successfully triggered grab in Radarr.")
+	fmt.Println("\033[32m✔\033[0m Successfully triggered upgrade in Radarr.")
 }
 
-func searchForSonarrAlternatives(item displayItem, database *db.DB) {
+func searchForSonarrAlternatives(item displayItem, database *db.DB, orch *orchestrator.Orchestrator) {
 	client := getClient()
 	inst := client.FindSonarr(item.ArrInstance)
 	if inst == nil {
@@ -628,26 +565,12 @@ func searchForSonarrAlternatives(item displayItem, database *db.DB) {
 
 	selected := selectedRaw.(*sonarr.ReleaseResource)
 
-	// 1. Delete associated torrents FIRST
-	fmt.Printf("Cleaning up current torrents for: %s...\n", item.Title)
-	if err := deleteAssociatedTorrents(ctx, item, database, client); err != nil {
-		fmt.Printf("\033[31m✘\033[0m Warning: failed to delete torrents: %v. Continuing with grab...\n", err)
-	}
-
-	// 2. Trigger grab
-	if dryRun {
-		fmt.Printf("\033[33m[DRY-RUN]\033[0m Would grabbing release: %s\n", arrs.GetString(selected.Title))
+	if err := orch.UpgradeCandidate(ctx, item.Record, selected); err != nil {
+		fmt.Printf("\033[31m✘\033[0m Error during upgrade: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Grabbing release: %s...\n", arrs.GetString(selected.Title))
-	err = inst.DownloadRelease(ctx, selected)
-	if err != nil {
-		fmt.Printf("Error grabbing release: %v\n", err)
-		return
-	}
-
-	fmt.Println("\033[32m✔\033[0m Successfully triggered grab in Sonarr.")
+	fmt.Println("\033[32m✔\033[0m Successfully triggered upgrade in Sonarr.")
 }
 
 func isCandidate(fileID int32, instance string, database *db.DB) bool {
