@@ -72,6 +72,24 @@ func (d *DB) migrate() error {
 			PRIMARY KEY (arr_instance, file_id),
 			FOREIGN KEY (arr_instance, file_id) REFERENCES media_files (arr_instance, file_id) ON DELETE CASCADE
 		);`,
+		`CREATE TABLE IF NOT EXISTS reports (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			action_type TEXT,
+			arr_instance TEXT,
+			arr_type TEXT,
+			item_title TEXT,
+			main_file_id INTEGER,
+			main_file_path TEXT,
+			total_size_before INTEGER,
+			total_size_after INTEGER,
+			deleted_files TEXT,
+			deleted_torrents TEXT,
+			new_release_title TEXT,
+			new_indexer TEXT,
+			status TEXT,
+			error_message TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
 	}
 
 	for _, q := range queries {
@@ -306,5 +324,97 @@ func (d *DB) DeleteMediaFile(arrInstance string, fileID int32) error {
 
 func (d *DB) DeleteTorrentByHash(clientName, hash string) error {
 	_, err := d.Exec("DELETE FROM torrents WHERE client_name = ? AND info_hash = ?", clientName, hash)
+	return err
+}
+
+type ReportRecord struct {
+	ID              int
+	ActionType      string
+	ArrInstance     string
+	ArrType         string
+	ItemTitle       string
+	MainFileID      int32
+	MainFilePath    string
+	TotalSizeBefore int64
+	TotalSizeAfter  int64
+	DeletedFiles    string // JSON
+	DeletedTorrents string // JSON
+	NewReleaseTitle string
+	NewIndexer      string
+	Status          string
+	ErrorMessage    string
+	CreatedAt       string
+}
+
+func (d *DB) InsertReport(r ReportRecord) error {
+	_, err := d.Exec(`
+		INSERT INTO reports (
+			action_type, arr_instance, arr_type, item_title, main_file_id, main_file_path,
+			total_size_before, total_size_after, deleted_files, deleted_torrents,
+			new_release_title, new_indexer, status, error_message
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, r.ActionType, r.ArrInstance, r.ArrType, r.ItemTitle, r.MainFileID, r.MainFilePath,
+		r.TotalSizeBefore, r.TotalSizeAfter, r.DeletedFiles, r.DeletedTorrents,
+		r.NewReleaseTitle, r.NewIndexer, r.Status, r.ErrorMessage)
+	return err
+}
+
+func (d *DB) GetReports(limit, offset int) ([]ReportRecord, error) {
+	rows, err := d.Query(`
+		SELECT id, action_type, arr_instance, arr_type, item_title, main_file_id, main_file_path,
+		       total_size_before, total_size_after, deleted_files, deleted_torrents,
+		       new_release_title, new_indexer, status, error_message, created_at
+		FROM reports
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []ReportRecord
+	for rows.Next() {
+		var r ReportRecord
+		if err := rows.Scan(
+			&r.ID, &r.ActionType, &r.ArrInstance, &r.ArrType, &r.ItemTitle, &r.MainFileID, &r.MainFilePath,
+			&r.TotalSizeBefore, &r.TotalSizeAfter, &r.DeletedFiles, &r.DeletedTorrents,
+			&r.NewReleaseTitle, &r.NewIndexer, &r.Status, &r.ErrorMessage, &r.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
+func (d *DB) GetReportByID(id int) (*ReportRecord, error) {
+	var r ReportRecord
+	err := d.QueryRow(`
+		SELECT id, action_type, arr_instance, arr_type, item_title, main_file_id, main_file_path,
+		       total_size_before, total_size_after, deleted_files, deleted_torrents,
+		       new_release_title, new_indexer, status, error_message, created_at
+		FROM reports WHERE id = ?
+	`, id).Scan(
+		&r.ID, &r.ActionType, &r.ArrInstance, &r.ArrType, &r.ItemTitle, &r.MainFileID, &r.MainFilePath,
+		&r.TotalSizeBefore, &r.TotalSizeAfter, &r.DeletedFiles, &r.DeletedTorrents,
+		&r.NewReleaseTitle, &r.NewIndexer, &r.Status, &r.ErrorMessage, &r.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (d *DB) DeleteReport(id int) error {
+	_, err := d.Exec("DELETE FROM reports WHERE id = ?", id)
+	return err
+}
+
+func (d *DB) ClearReports() error {
+	_, err := d.Exec("DELETE FROM reports")
 	return err
 }
