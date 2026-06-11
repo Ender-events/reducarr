@@ -46,6 +46,10 @@ var reportsCmd = &cobra.Command{
 				IsConfirm: true,
 			}
 			if _, err := confirm.Run(); err == nil {
+				if dryRun {
+					fmt.Println("\033[33m[DRY-RUN]\033[0m Would have cleared all reports.")
+					return
+				}
 				if err := database.ClearReports(); err != nil {
 					fmt.Printf("\033[31m✘\033[0m Error clearing reports: %v\n", err)
 				} else {
@@ -163,6 +167,10 @@ func handleReportAction(selected displayReport, database *db.DB) {
 				IsConfirm: true,
 			}
 			if _, err := confirm.Run(); err == nil {
+				if dryRun {
+					fmt.Printf("\033[33m[DRY-RUN]\033[0m Would have deleted report #%d.\n", selected.ID)
+					return
+				}
 				_ = database.DeleteReport(selected.ID)
 				return
 			}
@@ -224,5 +232,6 @@ func init() {
 	reportsCmd.Flags().IntVar(&limit, "limit", 50, "Limit number of reports to show")
 	reportsCmd.Flags().IntVar(&offset, "offset", 0, "Offset for reports pagination")
 	reportsCmd.Flags().BoolVar(&clear, "clear", false, "Clear all reports from database")
+	reportsCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Do not perform any destructive actions")
 	rootCmd.AddCommand(reportsCmd)
 }

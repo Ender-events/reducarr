@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/ui"
@@ -14,11 +15,12 @@ import (
 )
 
 type Scanner struct {
-	Client   *arrs.Client
-	DB       *db.DB
-	UI       *ui.ProgressLogger
-	Mappings map[string][]fsutil.PathMapping // client name -> mappings
-	Verbose  bool
+	Client      *arrs.Client
+	DB          *db.DB
+	UI          *ui.ProgressLogger
+	Mappings    map[string][]fsutil.PathMapping // client name -> mappings
+	Verbose     bool
+	Incremental bool
 
 	TotalTorrents int
 	TotalClients  int
@@ -55,8 +57,12 @@ func (s *Scanner) printSummary() {
 }
 
 func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) error {
+	instanceID := fmt.Sprintf("torrent_checkpoint_%s", inst.Name())
+	lastCheckpointStr, _ := s.DB.GetLastItemID(instanceID)
+	lastCheckpoint, _ := strconv.ParseInt(lastCheckpointStr, 10, 64)
+
 	if s.Verbose {
-		s.UI.LogPermanent(fmt.Sprintf("\n--- Scanning Torrent Client: %s ---", inst.Name()))
+		s.UI.LogPermanent(fmt.Sprintf("\n--- Scanning Torrent Client: %s (Incremental: %v) ---", inst.Name(), s.Incremental))
 	} else {
 		s.UI.UpdateTruncate(fmt.Sprintf("Fetching torrents from %s...", inst.Name()))
 	}
@@ -70,8 +76,23 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 		return err
 	}
 
+	maxAddedOn := lastCheckpoint
+	scannedCount := 0
+
 	for _, t := range torrents {
+		addedOn := int64(t.AddedOn)
+
+		// Check if we can skip this torrent in incremental mode
+		if s.Incremental && addedOn <= lastCheckpoint {
+			continue
+		}
+
+		if addedOn > maxAddedOn {
+			maxAddedOn = addedOn
+		}
+
 		s.TotalTorrents++
+		scannedCount++
 		msg := fmt.Sprintf("[%s] %s (%s)", inst.Name(), t.Name, t.Hash)
 		if s.Verbose {
 			s.UI.LogPermanent(msg)
@@ -113,15 +134,20 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 					is_seeding = excluded.is_seeding,
 					added_at = excluded.added_at,
 					updated_at = excluded.updated_at
-			`, inst.Name(), t.Hash, fullRemotePath, inode, isSeeding, t.AddedOn)
+			`, inst.Name(), t.Hash, fullRemotePath, inode, isSeeding, addedOn)
 			if err != nil {
 				return fmt.Errorf("insert torrent file: %w", err)
 			}
 		}
 	}
 
+	// Update checkpoint
+	if maxAddedOn > lastCheckpoint {
+		_ = s.DB.SetLastItemID(instanceID, strconv.FormatInt(maxAddedOn, 10))
+	}
+
 	if !s.Verbose {
-		s.UI.LogPermanent(fmt.Sprintf("\033[32m✔\033[0m Scanned %d torrents from %s", len(torrents), inst.Name()))
+		s.UI.LogPermanent(fmt.Sprintf("\033[32m✔\033[0m Scanned %d/%d torrents from %s", scannedCount, len(torrents), inst.Name()))
 	}
 	return nil
 }

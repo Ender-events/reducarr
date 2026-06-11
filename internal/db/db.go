@@ -236,6 +236,30 @@ func (d *DB) GetLastItemID(instanceID string) (string, error) {
 	return lastID, err
 }
 
+type ScanState struct {
+	InstanceID string
+	LastItemID string
+	UpdatedAt  string
+}
+
+func (d *DB) GetAllScanStates() ([]ScanState, error) {
+	rows, err := d.Query("SELECT instance_id, last_item_id, updated_at FROM scan_state ORDER BY instance_id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var states []ScanState
+	for rows.Next() {
+		var s ScanState
+		if err := rows.Scan(&s.InstanceID, &s.LastItemID, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		states = append(states, s)
+	}
+	return states, nil
+}
+
 func (d *DB) Exec(query string, args ...any) (sql.Result, error) {
 	return d.DB.Exec(query, args...)
 }

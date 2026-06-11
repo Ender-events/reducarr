@@ -622,5 +622,6 @@ func getRejectionSeverity(rejections []string) int {
 }
 
 func init() {
+	candidatesCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Do not perform any destructive actions (torrent deletion, release grab)")
 	rootCmd.AddCommand(candidatesCmd)
 }

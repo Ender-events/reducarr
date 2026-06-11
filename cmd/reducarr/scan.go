@@ -9,6 +9,7 @@ import (
 	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/scan"
+	"github.com/Ender-events/reducarr/internal/torrent"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/dustin/go-humanize"
@@ -20,6 +21,7 @@ var (
 	maxRatio        string
 	maxBitrate      string
 	resume          bool
+	incremental     bool
 	targetInstances []string
 )
 
@@ -120,17 +122,34 @@ var scanCmd = &cobra.Command{
 
 		client := arrs.NewClient(sonarrInstances, radarrInstances, qbitConfigs)
 
-		// 4. Setup Scanner
+		uiLogger := ui.NewProgressLogger()
+
+		// 4. Refresh Torrent Cache (Mandatory for cross-seed/deletion awareness)
+		tScanner := torrent.NewScanner(client, database, uiLogger, nil)
+		tScanner.Verbose = verbose
+		tScanner.Incremental = incremental
+		if err := tScanner.ScanAll(context.Background()); err != nil {
+			fmt.Printf("Warning: torrent scan failed: %v\n", err)
+		}
+
+		// 5. Setup Scanner
 		scanner := &scan.Scanner{
 			Client:  client,
 			DB:      database,
 			Scorer:  scorer,
-			UI:      ui.NewProgressLogger(),
+			UI:      uiLogger,
 			Resume:  resume,
 			Verbose: verbose,
 		}
 
-		if err := scanner.Run(context.Background()); err != nil {
+		ctx := context.Background()
+		if incremental {
+			err = scanner.Incremental(ctx)
+		} else {
+			err = scanner.Run(ctx)
+		}
+
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -144,7 +163,8 @@ func init() {
 	scanCmd.Flags().StringVar(&maxSize, "max-size", "", "Maximum allowed file size (e.g., 10GB)")
 	scanCmd.Flags().StringVar(&maxRatio, "max-ratio", "", "Maximum allowed Size/Duration ratio (e.g., 100MiB/min)")
 	scanCmd.Flags().StringVar(&maxBitrate, "max-bitrate", "", "Maximum allowed bitrate (e.g., 10Mbit)")
-	scanCmd.Flags().BoolVar(&resume, "resume", false, "Resume scanning from the last saved checkpoint")
+	scanCmd.Flags().BoolVarP(&resume, "resume", "r", false, "Resume scanning from the last saved checkpoint")
+	scanCmd.Flags().BoolVarP(&incremental, "incremental", "n", false, "Scan only recently added files (incremental)")
 	scanCmd.Flags().StringSliceVarP(&targetInstances, "instance", "i", []string{}, "Target specific instances to scan")
 
 	_ = scanCmd.RegisterFlagCompletionFunc("instance", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

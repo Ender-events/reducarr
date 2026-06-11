@@ -25,8 +25,12 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		// If dry-run flag was NOT explicitly set, use the config value
-		if !cmd.Flags().Changed("dry-run") {
+		// If dry-run flag exists on this command and was NOT explicitly set, use the config value
+		f := cmd.Flags().Lookup("dry-run")
+		if f != nil && !f.Changed {
+			dryRun = cfg.DryRun
+		} else if f == nil {
+			// If flag doesn't exist (read-only command), always use config or default
 			dryRun = cfg.DryRun
 		}
 
@@ -37,5 +41,4 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
-	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Do not perform any destructive actions (torrent deletion, release grab)")
 }

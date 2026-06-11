@@ -46,6 +46,7 @@ type SonarrInstance interface {
 	GetEpisodeFile(ctx context.Context, fileId int32) (*sonarr.EpisodeFileResource, error)
 	ListEpisodes(ctx context.Context, seriesId int32) ([]sonarr.EpisodeResource, error)
 	DeleteEpisodeFile(ctx context.Context, fileId int32) error
+	ListHistory(ctx context.Context, pageSize int32) ([]sonarr.HistoryResource, error)
 }
 
 type RadarrInstance interface {
@@ -57,6 +58,9 @@ type RadarrInstance interface {
 	DownloadRelease(ctx context.Context, release *radarr.ReleaseResource) error
 	TriggerMovieSearch(ctx context.Context, movieId int32) error
 	DeleteMovieFile(ctx context.Context, fileId int32) error
+	ListHistory(ctx context.Context, pageSize int32) ([]radarr.HistoryResource, error)
+	GetMovie(ctx context.Context, movieId int32) (*radarr.MovieResource, error)
+	GetMovieFile(ctx context.Context, fileId int32) (*radarr.MovieFileResource, error)
 }
 
 type TorrentInstance interface {
@@ -144,6 +148,18 @@ func (s *sonarrInst) DeleteEpisodeFile(ctx context.Context, fileId int32) error 
 	return err
 }
 
+func (s *sonarrInst) ListHistory(ctx context.Context, pageSize int32) ([]sonarr.HistoryResource, error) {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	req := s.api.HistoryAPI.GetHistory(authCtx).PageSize(pageSize)
+	history, _, err := s.api.HistoryAPI.GetHistoryExecute(req)
+	if err != nil {
+		return nil, err
+	}
+	return history.Records, nil
+}
+
 type radarrInst struct {
 	name     string
 	url      string
@@ -194,6 +210,34 @@ func (r *radarrInst) DeleteMovieFile(ctx context.Context, fileId int32) error {
 	})
 	_, err := r.api.MovieFileAPI.DeleteMovieFile(authCtx, fileId).Execute()
 	return err
+}
+
+func (r *radarrInst) ListHistory(ctx context.Context, pageSize int32) ([]radarr.HistoryResource, error) {
+	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
+		"X-Api-Key": {Key: r.apiKey},
+	})
+	req := r.api.HistoryAPI.GetHistory(authCtx).PageSize(pageSize)
+	history, _, err := r.api.HistoryAPI.GetHistoryExecute(req)
+	if err != nil {
+		return nil, err
+	}
+	return history.Records, nil
+}
+
+func (r *radarrInst) GetMovie(ctx context.Context, movieId int32) (*radarr.MovieResource, error) {
+	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
+		"X-Api-Key": {Key: r.apiKey},
+	})
+	movie, _, err := r.api.MovieAPI.GetMovieById(authCtx, movieId).Execute()
+	return movie, err
+}
+
+func (r *radarrInst) GetMovieFile(ctx context.Context, fileId int32) (*radarr.MovieFileResource, error) {
+	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
+		"X-Api-Key": {Key: r.apiKey},
+	})
+	file, _, err := r.api.MovieFileAPI.GetMovieFileById(authCtx, fileId).Execute()
+	return file, err
 }
 
 func (r *radarrInst) rawPost(ctx context.Context, endpoint string, body any) error {
