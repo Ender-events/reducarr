@@ -177,6 +177,10 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 
 			s.TotalScanned++
 			if isCand {
+				if s.DB.IsCandidateIgnored(inst.Name(), *file.Id) {
+					continue
+				}
+
 				s.TotalCandidate++
 
 				// Check for cross-seeds
@@ -295,12 +299,15 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 			if err != nil {
 				return fmt.Errorf("upsert media file: %w", err)
 			}
-
 			isCand, reason := s.Scorer.IsCandidate(info)
 			sizeStr := humanize.Bytes(uint64(info.Size))
 
 			s.TotalScanned++
 			if isCand {
+				if s.DB.IsCandidateIgnored(inst.Name(), *movie.MovieFile.Id) {
+					continue
+				}
+
 				s.TotalCandidate++
 
 				// Check for cross-seeds

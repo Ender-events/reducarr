@@ -68,6 +68,7 @@ func (d *DB) migrate() error {
 			arr_instance TEXT,
 			file_id INTEGER,
 			reason TEXT,
+			is_ignored BOOLEAN DEFAULT 0,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (arr_instance, file_id),
 			FOREIGN KEY (arr_instance, file_id) REFERENCES media_files (arr_instance, file_id) ON DELETE CASCADE
@@ -98,9 +99,10 @@ func (d *DB) migrate() error {
 		}
 	}
 
-	// Dynamic migration for added_at if table already exists
+	// Dynamic migration for columns added later
 	_, _ = d.Exec("ALTER TABLE torrents ADD COLUMN added_at INTEGER")
 	_, _ = d.Exec("ALTER TABLE media_files ADD COLUMN season_number INTEGER")
+	_, _ = d.Exec("ALTER TABLE candidates ADD COLUMN is_ignored BOOLEAN DEFAULT 0")
 
 	return nil
 }
@@ -139,8 +141,8 @@ func (d *DB) UpsertMediaFile(r MediaFileRecord) error {
 
 func (d *DB) UpsertCandidate(arrInstance string, fileID int32, reason string) error {
 	_, err := d.Exec(`
-		INSERT INTO candidates (arr_instance, file_id, reason, updated_at)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO candidates (arr_instance, file_id, reason, is_ignored, updated_at)
+		VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
 		ON CONFLICT(arr_instance, file_id) DO UPDATE SET
 			reason = excluded.reason,
 			updated_at = excluded.updated_at
@@ -148,16 +150,36 @@ func (d *DB) UpsertCandidate(arrInstance string, fileID int32, reason string) er
 	return err
 }
 
+func (d *DB) SetIgnoreCandidate(arrInstance string, fileID int32, ignore bool) error {
+	val := 0
+	if ignore {
+		val = 1
+	}
+	_, err := d.Exec("UPDATE candidates SET is_ignored = ? WHERE arr_instance = ? AND file_id = ?", val, arrInstance, fileID)
+	return err
+}
+
+func (d *DB) IsCandidateIgnored(arrInstance string, fileID int32) bool {
+	var ignored bool
+	err := d.QueryRow("SELECT is_ignored FROM candidates WHERE arr_instance = ? AND file_id = ?", arrInstance, fileID).Scan(&ignored)
+	if err != nil {
+		return false
+	}
+	return ignored
+}
+
 type CandidateRecord struct {
 	MediaFileRecord
-	Reason string
+	Reason    string
+	IsIgnored bool
 }
 
 func (d *DB) GetCandidatesWithMedia() ([]CandidateRecord, error) {
 	rows, err := d.Query(`
-		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason
+		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored
 		FROM candidates c
 		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		WHERE c.is_ignored = 0
 		ORDER BY m.size DESC
 	`)
 	if err != nil {
@@ -168,12 +190,41 @@ func (d *DB) GetCandidatesWithMedia() ([]CandidateRecord, error) {
 	var records []CandidateRecord
 	for rows.Next() {
 		var r CandidateRecord
-		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber, &r.Reason); err != nil {
+		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber, &r.Reason, &r.IsIgnored); err != nil {
 			return nil, err
 		}
 		records = append(records, r)
 	}
 	return records, nil
+}
+
+func (d *DB) GetIgnoredCandidates() ([]CandidateRecord, error) {
+	rows, err := d.Query(`
+		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored
+		FROM candidates c
+		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		WHERE c.is_ignored = 1
+		ORDER BY m.updated_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []CandidateRecord
+	for rows.Next() {
+		var r CandidateRecord
+		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber, &r.Reason, &r.IsIgnored); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
+func (d *DB) RemoveIgnore(arrInstance string, fileID int32) error {
+	_, err := d.Exec("UPDATE candidates SET is_ignored = 0 WHERE arr_instance = ? AND file_id = ?", arrInstance, fileID)
+	return err
 }
 
 func (d *DB) GetLastItemID(instanceID string) (string, error) {

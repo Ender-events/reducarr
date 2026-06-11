@@ -62,11 +62,14 @@ var candidatesCmd = &cobra.Command{
 
 			templates := &promptui.SelectTemplates{
 				Label:    "{{ . }}",
-				Active:   "\033[31m▶\033[0m {{ .Title | cyan }} ({{ .Size | yellow }})",
-				Inactive: "  {{ .Title | cyan }} ({{ .Size | yellow }})",
-				Selected: "\033[32m✔\033[0m Selected: {{ .Title | cyan }}",
+				Active:   "\033[31m▶\033[0m {{ if .IsExit }}{{ .Title }}{{ else }}{{ .Title | cyan }} ({{ .Size | green }}){{ end }}",
+				Inactive: "  {{ if .IsExit }}{{ .Title }}{{ else }}{{ .Title | cyan }} ({{ .Size | green }}){{ end }}",
+				Selected: "\033[32m✔\033[0m {{ if .IsExit }}Exited{{ else }}Candidate: {{ .Title | cyan }} ({{ .Size | green }}){{ end }}",
 				Details: `
 --------- Candidate Details ---------
+{{ if .IsExit }}
+{{ "Close the candidates browser" | faint }}
+{{ else }}
 {{ "Instance:" | faint }}	{{ .ArrInstance }} ({{ .ArrType }})
 {{ "Path:" | faint }}	{{ .Path }}
 {{ "Size:" | faint }}	{{ .Size }}
@@ -74,7 +77,8 @@ var candidatesCmd = &cobra.Command{
 {{ "Reason:" | faint }}	{{ .Reason | red }}
 {{ "Inode:" | faint }}	{{ .Inode }}
 {{ "Torrents:" | faint }}
-{{ .Torrents }}`,
+{{ .Torrents }}
+{{ end }}`,
 			}
 
 			items := make([]displayItem, len(candidates)+1)
@@ -105,8 +109,13 @@ var candidatesCmd = &cobra.Command{
 					torrentLine = "  No active torrents found in cache."
 				}
 
+				title := c.Title
+				if c.ArrType == "sonarr" && c.SeasonNumber > 0 {
+					title = fmt.Sprintf("%s - S%02d", c.Title, c.SeasonNumber)
+				}
+
 				items[i] = displayItem{
-					Title:        c.Title,
+					Title:        title,
 					Size:         humanize.Bytes(uint64(c.Size)),
 					ArrInstance:  c.ArrInstance,
 					ArrType:      c.ArrType,
@@ -195,7 +204,11 @@ var candidatesCmd = &cobra.Command{
 					}
 				}
 			case "Ignore":
-				fmt.Printf("Ignoring: %s (Not yet implemented)\n", selected.Title)
+				if err := database.SetIgnoreCandidate(selected.ArrInstance, selected.ID, true); err != nil {
+					fmt.Printf("\033[31m✘\033[0m Error ignoring candidate: %v\n", err)
+				} else {
+					fmt.Printf("\033[32m✔\033[0m Candidate '%s' will now be ignored in future scans.\n", selected.Title)
+				}
 			case "Back":
 				continue
 			case "Exit":
