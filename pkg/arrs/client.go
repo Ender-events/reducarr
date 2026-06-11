@@ -26,6 +26,7 @@ type QBitConfig struct {
 	Username     string
 	Password     string
 	PathMappings []fsutil.PathMapping
+	ReadOnly     bool
 }
 
 type HealthResult struct {
@@ -64,6 +65,7 @@ type TorrentInstance interface {
 	PathMappings() []fsutil.PathMapping
 	GetFiles(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error)
 	DeleteTorrent(ctx context.Context, hash string, deleteFiles bool) error
+	IsReadOnly() bool
 }
 
 type Client struct {
@@ -225,11 +227,13 @@ type torrentInst struct {
 	name     string
 	api      *qbittorrent.Client
 	mappings []fsutil.PathMapping
+	readOnly bool
 }
 
 func (t *torrentInst) Name() string                       { return t.name }
 func (t *torrentInst) Api() *qbittorrent.Client           { return t.api }
 func (t *torrentInst) PathMappings() []fsutil.PathMapping { return t.mappings }
+func (t *torrentInst) IsReadOnly() bool                   { return t.readOnly }
 func (t *torrentInst) GetFiles(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error) {
 	res, err := t.api.GetFilesInformationCtx(ctx, hash)
 	if err != nil {
@@ -282,6 +286,7 @@ func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitCon
 			name:     cfg.Name,
 			api:      api,
 			mappings: cfg.PathMappings,
+			readOnly: cfg.ReadOnly,
 		})
 	}
 

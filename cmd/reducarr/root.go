@@ -24,6 +24,12 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
+
+		// If dry-run flag was NOT explicitly set, use the config value
+		if !cmd.Flags().Changed("dry-run") {
+			dryRun = cfg.DryRun
+		}
+
 		return nil
 	},
 }

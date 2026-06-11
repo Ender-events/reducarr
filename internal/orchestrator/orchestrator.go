@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/pkg/arrs"
+	"github.com/Ender-events/reducarr/pkg/fsutil"
 	"github.com/devopsarr/radarr-go/radarr"
 	"github.com/devopsarr/sonarr-go/sonarr"
 )
@@ -98,23 +100,67 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 	for _, t := range torrents {
 		for _, tInst := range o.client.Torrents {
 			if tInst.Name() == t.ClientName {
-				if o.dryRun {
-					fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent: %s (Client: %s)\n", t.InfoHash[:8], t.ClientName)
-					continue
+				if tInst.IsReadOnly() {
+					// Read-Only mode: Get files from DB (which has full remote paths), remove from client (entry only), then delete manually
+					allTorrentFiles, err := o.db.GetTorrentsByHash(t.InfoHash)
+					var filesToDelete []string
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "\033[31m✘\033[0m Warning: could not get file list from database for torrent %s: %v\n", t.InfoHash, err)
+					} else {
+						for _, tf := range allTorrentFiles {
+							filesToDelete = append(filesToDelete, fsutil.MapPath(tf.FilePath, tInst.PathMappings()))
+						}
+					}
+
+					if o.dryRun {
+						fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent from client %s (metadata only): %s\n", t.ClientName, t.InfoHash[:8])
+						fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would manually delete %d files on disk:\n", len(filesToDelete))
+						for _, p := range filesToDelete {
+							fmt.Printf("  \033[33m[DRY-RUN]\033[0m   - %s\n", p)
+						}
+					} else {
+						if o.verbose {
+							fmt.Printf("  Removing torrent entry from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
+						}
+						if err := tInst.Api().LoginCtx(ctx); err != nil {
+							return report, o.failReport(report, fmt.Errorf("login to client %s: %w", t.ClientName, err))
+						}
+						if err := tInst.DeleteTorrent(ctx, t.InfoHash, false); err != nil {
+							return report, o.failReport(report, fmt.Errorf("delete torrent entry %s: %w", t.InfoHash, err))
+						}
+
+						if o.verbose {
+							fmt.Printf("  Manually deleting %d files for torrent %s...\n", len(filesToDelete), t.InfoHash[:8])
+						}
+						for _, p := range filesToDelete {
+							if err := os.Remove(p); err != nil {
+								if !os.IsNotExist(err) {
+									fmt.Printf("\033[31m✘\033[0m Warning: failed to manually delete %s: %v\n", p, err)
+								}
+							}
+						}
+					}
+				} else {
+					// Standard mode: Let the client delete everything
+					if o.dryRun {
+						fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent and files from client %s: %s\n", t.ClientName, t.InfoHash[:8])
+					} else {
+						if o.verbose {
+							fmt.Printf("  Removing torrent and files from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
+						}
+						if err := tInst.Api().LoginCtx(ctx); err != nil {
+							return report, o.failReport(report, fmt.Errorf("login to client %s: %w", t.ClientName, err))
+						}
+						if err := tInst.DeleteTorrent(ctx, t.InfoHash, true); err != nil {
+							return report, o.failReport(report, fmt.Errorf("delete torrent and files %s: %w", t.InfoHash, err))
+						}
+					}
 				}
 
-				if o.verbose {
-					fmt.Printf("  Removing torrent: %s (Client: %s)...\n", t.InfoHash[:8], t.ClientName)
-				}
-				if err := tInst.Api().LoginCtx(ctx); err != nil {
-					return report, o.failReport(report, fmt.Errorf("login to client %s: %w", t.ClientName, err))
-				}
-				if err := tInst.DeleteTorrent(ctx, t.InfoHash, true); err != nil {
-					return report, o.failReport(report, fmt.Errorf("delete torrent %s: %w", t.InfoHash, err))
-				}
-
-				if err := o.db.DeleteTorrentByHash(t.ClientName, t.InfoHash); err != nil {
-					fmt.Printf("\033[31m✘\033[0m Warning: failed to delete torrent %s from DB: %v\n", t.InfoHash, err)
+				if !o.dryRun {
+					if err := o.db.DeleteTorrentByHash(t.ClientName, t.InfoHash); err != nil {
+						fmt.Printf("\033[31m✘\033[0m Warning: failed to delete torrent %s from DB: %v\n", t.InfoHash, err)
+					}
 				}
 			}
 		}
@@ -122,10 +168,10 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 
 	// 3. Delete from Arr
 	if o.dryRun {
-		fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would delete %s file %d from instance %s\n", item.ArrType, item.FileID, item.ArrInstance)
+		fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would delete file (internal %s id %d) from instance %s\n", item.ArrType, item.FileID, item.ArrInstance)
 	} else {
 		if o.verbose {
-			fmt.Printf("  Deleting file %d from %s (Instance: %s)...\n", item.FileID, item.ArrType, item.ArrInstance)
+			fmt.Printf("  Deleting file (internal %s id %d) from instance: %s\n", item.ArrType, item.FileID, item.ArrInstance)
 		}
 		if item.ArrType == "sonarr" {
 			inst := o.client.FindSonarr(item.ArrInstance)

@@ -21,6 +21,7 @@ type QBittorrentConfig struct {
 	Username     string               `mapstructure:"username"`
 	Password     string               `mapstructure:"password"`
 	PathMappings []fsutil.PathMapping `mapstructure:"pathMappings"`
+	ReadOnly     bool                 `mapstructure:"readOnly"`
 }
 
 type ScoringConfig struct {
@@ -36,6 +37,7 @@ type Config struct {
 	QBittorrent []QBittorrentConfig `mapstructure:"qbittorrent"`
 	Scoring     ScoringConfig       `mapstructure:"scoring"`
 	RateLimit   int                 `mapstructure:"rateLimit"` // searches per hour
+	DryRun      bool                `mapstructure:"dryRun"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -48,6 +50,7 @@ func LoadConfig() (*Config, error) {
 
 	// Defaults
 	viper.SetDefault("rateLimit", 50)
+	viper.SetDefault("dryRun", false)
 	viper.SetDefault("scoring.maxSize", "")
 	viper.SetDefault("scoring.maxRatio", "100MiB/min")
 	viper.SetDefault("scoring.maxBitrate", "")

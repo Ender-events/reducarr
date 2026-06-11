@@ -222,6 +222,7 @@ func getClient() *arrs.Client {
 			Username:     q.Username,
 			Password:     q.Password,
 			PathMappings: q.PathMappings,
+			ReadOnly:     q.ReadOnly,
 		}
 	}
 	return arrs.NewClient(sonarrInstances, radarrInstances, qbitConfigs)

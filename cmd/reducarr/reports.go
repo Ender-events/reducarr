@@ -29,7 +29,6 @@ type displayReport struct {
 	Record     db.ReportRecord
 }
 
-
 var reportsCmd = &cobra.Command{
 	Use:   "reports",
 	Short: "Browse and manage operation reports",
