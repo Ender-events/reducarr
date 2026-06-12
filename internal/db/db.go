@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -91,6 +92,18 @@ func (d *DB) migrate() error {
 			status TEXT,
 			error_message TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS users (
+			username TEXT PRIMARY KEY,
+			password TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			token TEXT PRIMARY KEY,
+			username TEXT,
+			expires_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (username) REFERENCES users (username) ON DELETE CASCADE
 		);`,
 	}
 
@@ -243,6 +256,12 @@ type ScanState struct {
 	UpdatedAt  string
 }
 
+type UserRecord struct {
+	Username  string
+	Password  string
+	UpdatedAt string
+}
+
 func (d *DB) GetAllScanStates() ([]ScanState, error) {
 	rows, err := d.Query("SELECT instance_id, last_item_id, updated_at FROM scan_state ORDER BY instance_id")
 	if err != nil {
@@ -273,6 +292,82 @@ func (d *DB) SetLastItemID(instanceID, lastID string) error {
 			last_item_id = excluded.last_item_id,
 			updated_at = excluded.updated_at
 	`, instanceID, lastID)
+	return err
+}
+
+func (d *DB) GetUser(username string) (string, error) {
+	var password string
+	err := d.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&password)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return password, err
+}
+
+func (d *DB) GetAllUsers() ([]UserRecord, error) {
+	rows, err := d.Query("SELECT username, password, updated_at FROM users ORDER BY username")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []UserRecord
+	for rows.Next() {
+		var r UserRecord
+		if err := rows.Scan(&r.Username, &r.Password, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
+func (d *DB) DeleteUser(username string) error {
+	_, err := d.Exec("DELETE FROM users WHERE username = ?", username)
+	return err
+}
+
+func (d *DB) GetFirstUser() (string, string, error) {
+	var username, password string
+	err := d.QueryRow("SELECT username, password FROM users LIMIT 1").Scan(&username, &password)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return username, password, err
+}
+
+func (d *DB) UpsertUser(username, password string) error {
+	_, err := d.Exec(`
+		INSERT INTO users (username, password, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(username) DO UPDATE SET
+			password = excluded.password,
+			updated_at = excluded.updated_at
+	`, username, password)
+	return err
+}
+
+func (d *DB) CreateSession(token, username string, expiresAt time.Time) error {
+	_, err := d.Exec("INSERT INTO sessions (token, username, expires_at) VALUES (?, ?, ?)", token, username, expiresAt)
+	return err
+}
+
+func (d *DB) GetSession(token string) (string, error) {
+	var username string
+	var expiresAt time.Time
+	err := d.QueryRow("SELECT username, expires_at FROM sessions WHERE token = ?", token).Scan(&username, &expiresAt)
+	if err != nil {
+		return "", err
+	}
+	if time.Now().After(expiresAt) {
+		_ = d.DeleteSession(token)
+		return "", fmt.Errorf("session expired")
+	}
+	return username, nil
+}
+
+func (d *DB) DeleteSession(token string) error {
+	_, err := d.Exec("DELETE FROM sessions WHERE token = ?", token)
 	return err
 }
 
