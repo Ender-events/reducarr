@@ -64,6 +64,7 @@ func (d *DB) migrate() error {
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_media_files_inode ON media_files(inode);`,
 		`CREATE INDEX IF NOT EXISTS idx_media_files_path ON media_files(path);`,
+		`CREATE INDEX IF NOT EXISTS idx_media_files_title ON media_files(title);`,
 		`CREATE TABLE IF NOT EXISTS candidates (
 			arr_instance TEXT,
 			file_id INTEGER,
@@ -372,6 +373,30 @@ func (d *DB) GetMediaFileByPath(path string) (*MediaFileRecord, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+func (d *DB) SearchMediaFiles(query string, limit int) ([]MediaFileRecord, error) {
+	q := "%" + query + "%"
+	rows, err := d.Query(`
+		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, season_number
+		FROM media_files
+		WHERE title LIKE ? OR path LIKE ?
+		ORDER BY title ASC
+		LIMIT ?`, q, q, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []MediaFileRecord
+	for rows.Next() {
+		var r MediaFileRecord
+		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
 }
 
 func (d *DB) GetAllTorrents() ([]TorrentRecord, error) {
