@@ -1,0 +1,202 @@
+package web
+
+import (
+	"fmt"
+	"strings"
+	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/dustin/go-humanize"
+)
+
+func safeID(instance string, id int32) string {
+	s := strings.ReplaceAll(instance, " ", "_")
+	return fmt.Sprintf("candidate-%s-%d", s, id)
+}
+
+templ CandidateRow(username string, c db.CandidateRecord) {
+	<tr id={ safeID(c.ArrInstance, c.FileID) }>
+		<td>
+			<div class="flex flex-col">
+				<span class="font-medium text-xs sm:text-sm">{ c.ArrInstance }</span>
+				<span class="text-[10px] opacity-50 uppercase font-bold">{ c.ArrType }</span>
+			</div>
+		</td>
+		<td class="max-w-0">
+			<div class="flex flex-col min-w-[150px]">
+				<span class="font-bold truncate text-sm sm:text-base">{ c.Title }</span>
+				if c.ArrType == "sonarr" && c.SeasonNumber > 0 {
+					<span class="text-[10px] sm:text-xs opacity-70">Season { fmt.Sprintf("%d", c.SeasonNumber) }</span>
+				}
+				<span class="text-[10px] sm:text-xs opacity-50 truncate" title={ c.Path }>{ c.Path }</span>
+			</div>
+		</td>
+		<td class="hidden md:table-cell">
+			<div class="badge badge-ghost badge-sm">{ c.Quality }</div>
+		</td>
+		<td class="font-mono text-success text-xs sm:text-sm whitespace-nowrap">
+			{ humanize.Bytes(uint64(c.Size)) }
+		</td>
+		<td class="hidden sm:table-cell">
+			<span class="text-error text-[10px] sm:text-xs leading-tight line-clamp-2" title={ c.Reason }>{ c.Reason }</span>
+		</td>
+		<td class="text-right">
+			<div class="join">
+				<button
+					class="btn btn-xs sm:btn-sm btn-primary join-item"
+					title="Search for alternatives"
+					hx-get={ fmt.Sprintf("/api/candidates/%s/%d/search", c.ArrInstance, c.FileID) }
+					hx-target="#modal-container"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+				</button>
+				<button
+					class="btn btn-xs sm:btn-sm btn-ghost join-item text-error"
+					title="Delete"
+					hx-delete={ fmt.Sprintf("/api/candidates/%s/%d", c.ArrInstance, c.FileID) }
+					hx-confirm={ fmt.Sprintf("Are you sure you want to delete '%s'?", c.Title) }
+					hx-target={ "#" + safeID(c.ArrInstance, c.FileID) }
+					hx-swap="outerHTML"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+				</button>
+				<button
+					class="btn btn-xs sm:btn-sm btn-ghost join-item"
+					title="Ignore"
+					hx-post={ fmt.Sprintf("/api/candidates/%s/%d/ignore", c.ArrInstance, c.FileID) }
+					hx-target={ "#" + safeID(c.ArrInstance, c.FileID) }
+					hx-swap="outerHTML"
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+				</button>
+			</div>
+		</td>
+	</tr>
+}
+
+type ReleaseInfo struct {
+	GUID       string
+	Title      string
+	Size       int64
+	Indexer    string
+	Seeders    int32
+	Quality    string
+	Score      int32
+	Rejections []string
+}
+
+templ SearchModal(title string, instance string, id int32, releases []ReleaseInfo) {
+	<dialog id="search_modal" class="modal modal-open">
+		<div class="modal-box w-11/12 max-w-5xl bg-base-100">
+			<form method="dialog">
+				<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" hx-on:click="document.getElementById('search_modal').remove()">✕</button>
+			</form>
+			<h3 class="text-xl font-bold mb-4">Alternatives for: { title }</h3>
+
+			<div class="overflow-x-auto">
+				<table class="table table-zebra w-full table-xs sm:table-sm">
+					<thead>
+						<tr>
+							<th>Title</th>
+							<th>Indexer</th>
+							<th>Size</th>
+							<th>Seeders</th>
+							<th>Quality</th>
+							<th>Score</th>
+							<th class="text-right">Action</th>
+						</tr>
+					</thead>
+					<tbody>
+						if len(releases) == 0 {
+							<tr>
+								<td colspan="7" class="text-center py-8 opacity-50 italic">No alternatives found.</td>
+							</tr>
+						}
+						for _, r := range releases {
+							<tr class={ templ.KV("opacity-50", len(r.Rejections) > 0) }>
+								<td class="max-w-xs">
+									<div class="flex flex-col">
+										<span class="font-medium truncate" title={ r.Title }>{ r.Title }</span>
+										if len(r.Rejections) > 0 {
+											<span class="text-[10px] text-error truncate" title={ strings.Join(r.Rejections, ", ") }>
+												Rejected: { strings.Join(r.Rejections, ", ") }
+											</span>
+										}
+									</div>
+								</td>
+								<td class="text-xs">{ r.Indexer }</td>
+								<td class="font-mono">{ humanize.Bytes(uint64(r.Size)) }</td>
+								<td>{ fmt.Sprintf("%d", r.Seeders) }</td>
+								<td><div class="badge badge-outline badge-xs">{ r.Quality }</div></td>
+								<td class="font-bold">{ fmt.Sprintf("%d", r.Score) }</td>
+								<td class="text-right">
+									<button
+										class="btn btn-xs btn-success"
+										hx-post={ fmt.Sprintf("/api/candidates/%s/%d/grab", instance, id) }
+										hx-vals={ fmt.Sprintf(`{"guid": "%s"}`, r.GUID) }
+										hx-target={ "#" + safeID(instance, id) }
+										hx-swap="outerHTML"
+										hx-on:click="document.getElementById('search_modal').remove()"
+									>
+										Grab
+									</button>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button hx-on:click="document.getElementById('search_modal').remove()">close</button>
+		</form>
+	</dialog>
+}
+
+templ CandidatesPage(username string, candidates []db.CandidateRecord) {
+	@Layout("Candidates", username) {
+		<div class="space-y-6">
+			<div class="flex items-center justify-between">
+				<div>
+					<h1 class="text-3xl font-bold mb-1">Optimization Candidates</h1>
+					<p class="text-base-content/60">Identify and optimize oversized files in your library.</p>
+				</div>
+				<div class="badge badge-primary badge-lg">{ fmt.Sprintf("%d items", len(candidates)) }</div>
+			</div>
+
+			<div class="card bg-base-100 shadow border border-base-300 overflow-hidden">
+				<div class="overflow-x-auto">
+					<table class="table table-zebra w-full table-auto">
+						<thead>
+							<tr>
+								<th>Instance</th>
+								<th class="w-full">Title</th>
+								<th class="hidden md:table-cell">Quality</th>
+								<th>Size</th>
+								<th class="hidden sm:table-cell">Reason</th>
+								<th class="text-right">Actions</th>
+							</tr>
+						</thead>
+						<tbody id="candidates-table-body">
+							if len(candidates) == 0 {
+								<tr>
+									<td colspan="6" class="text-center py-12">
+										<div class="flex flex-col items-center gap-2 opacity-50">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+											<p class="text-lg font-medium">No candidates found</p>
+											<p class="text-sm">Try running a scan to find optimization opportunities.</p>
+										</div>
+									</td>
+								</tr>
+							}
+							for _, c := range candidates {
+								@CandidateRow(username, c)
+							}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+
+		<!-- Container for dynamic modals -->
+		<div id="modal-container"></div>
+	}
+}

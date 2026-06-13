@@ -241,6 +241,51 @@ func (d *DB) RemoveIgnore(arrInstance string, fileID int32) error {
 	return err
 }
 
+type DashboardStats struct {
+	TotalSpaceSaved   int64
+	PendingCandidates int
+	IgnoredFiles      int
+	FailedActions     int
+}
+
+func (d *DB) GetDashboardStats() (DashboardStats, error) {
+	var s DashboardStats
+
+	// Total saved: sum(size_before - size_after) for UPGRADE, plus size_before for DELETE
+	err := d.QueryRow(`
+		SELECT COALESCE(SUM(
+			CASE 
+				WHEN action_type = 'UPGRADE' THEN total_size_before - total_size_after
+				WHEN action_type = 'DELETE' THEN total_size_before
+				ELSE 0 
+			END), 0)
+		FROM reports WHERE status = 'SUCCESS'
+	`).Scan(&s.TotalSpaceSaved)
+	if err != nil {
+		return s, err
+	}
+
+	// Pending candidates
+	err = d.QueryRow("SELECT COUNT(*) FROM candidates WHERE is_ignored = 0").Scan(&s.PendingCandidates)
+	if err != nil {
+		return s, err
+	}
+
+	// Ignored files
+	err = d.QueryRow("SELECT COUNT(*) FROM candidates WHERE is_ignored = 1").Scan(&s.IgnoredFiles)
+	if err != nil {
+		return s, err
+	}
+
+	// Failed actions
+	err = d.QueryRow("SELECT COUNT(*) FROM reports WHERE status = 'FAILED'").Scan(&s.FailedActions)
+	if err != nil {
+		return s, err
+	}
+
+	return s, nil
+}
+
 func (d *DB) GetLastItemID(instanceID string) (string, error) {
 	var lastID string
 	err := d.QueryRow("SELECT last_item_id FROM scan_state WHERE instance_id = ?", instanceID).Scan(&lastID)

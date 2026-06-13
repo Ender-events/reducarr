@@ -1,0 +1,88 @@
+package web
+
+import (
+	"fmt"
+	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/dustin/go-humanize"
+)
+
+templ ReportsPage(username string, reports []db.ReportRecord) {
+	@Layout("Reports", username) {
+		<div class="space-y-6">
+			<div class="flex items-center justify-between">
+				<div>
+					<h1 class="text-3xl font-bold mb-1">Operation Reports</h1>
+					<p class="text-base-content/60">History of optimizations and actions performed.</p>
+				</div>
+				<div class="badge badge-outline badge-lg">{ fmt.Sprintf("%d records", len(reports)) }</div>
+			</div>
+
+			<div class="card bg-base-100 shadow border border-base-300 overflow-hidden">
+				<div class="overflow-x-auto">
+					<table class="table table-zebra w-full table-auto">
+						<thead>
+							<tr>
+								<th class="hidden sm:table-cell">Date</th>
+								<th>Action</th>
+								<th class="w-full">Item</th>
+								<th>Status</th>
+								<th class="text-right">Net Saved</th>
+							</tr>
+						</thead>
+						<tbody>
+							if len(reports) == 0 {
+								<tr>
+									<td colspan="5" class="text-center py-12">
+										<div class="flex flex-col items-center gap-2 opacity-50">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+											<p class="text-lg font-medium">No reports found</p>
+											<p class="text-sm">Your activity history will appear here.</p>
+										</div>
+									</td>
+								</tr>
+							}
+							for _, r := range reports {
+								<tr>
+									<td class="text-[10px] sm:text-xs opacity-70 whitespace-nowrap hidden sm:table-cell">
+										{ r.CreatedAt }
+									</td>
+									<td>
+										<div class={ "badge badge-xs sm:badge-sm font-bold", templ.KV("badge-primary", r.ActionType == "UPGRADE"), templ.KV("badge-secondary", r.ActionType == "DELETE") }>
+											{ r.ActionType }
+										</div>
+									</td>
+									<td class="max-w-0">
+										<div class="flex flex-col min-w-[150px]">
+											<span class="font-bold truncate text-sm sm:text-base">{ r.ItemTitle }</span>
+											<span class="text-[10px] sm:text-xs opacity-50 truncate" title={ r.MainFilePath }>{ r.MainFilePath }</span>
+										</div>
+									</td>
+									<td>
+										if r.Status == "SUCCESS" {
+											<div class="badge badge-success badge-soft badge-xs sm:badge-sm">Success</div>
+										} else {
+											<div class="badge badge-error badge-soft badge-xs sm:badge-sm" title={ r.ErrorMessage }>Failed</div>
+										}
+									</td>
+									<td class="font-mono text-right text-xs sm:text-sm">
+										if r.Status == "SUCCESS" {
+											if r.ActionType == "UPGRADE" && r.TotalSizeAfter > 0 {
+												<span class="text-success whitespace-nowrap">+{ humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter)) }</span>
+											} else if r.ActionType == "DELETE" {
+												<span class="text-success whitespace-nowrap">+{ humanize.Bytes(uint64(r.TotalSizeBefore)) }</span>
+											} else {
+												<span class="opacity-30">0 B</span>
+											}
+										} else {
+											<span class="opacity-30">-</span>
+										}
+									</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+	}
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/spf13/cobra"
@@ -23,6 +24,10 @@ var rootCmd = &cobra.Command{
 		cfg, err = config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
+		}
+
+		if os.Getenv("VERBOSE") == "1" {
+			verbose = true
 		}
 
 		// If dry-run flag exists on this command and was NOT explicitly set, use the config value

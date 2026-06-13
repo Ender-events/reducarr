@@ -1,0 +1,50 @@
+package web
+
+templ ChangePasswordModal(username string, errorMessage string, success bool) {
+	<dialog id="profile_modal" class="modal modal-open">
+		<div class="modal-box bg-base-100 max-w-sm">
+			<form method="dialog">
+				<button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" hx-on:click="document.getElementById('profile_modal').remove()">✕</button>
+			</form>
+			<h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+				<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+				User Profile
+			</h3>
+
+			if success {
+				<div role="alert" class="alert alert-success mb-4 py-2 text-sm shadow-sm border-none">
+					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+					<span>Password updated successfully!</span>
+				</div>
+			}
+
+			if errorMessage != "" {
+				<div role="alert" class="alert alert-error mb-4 py-2 text-sm shadow-sm border-none">
+					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+					<span>{ errorMessage }</span>
+				</div>
+			}
+
+			<p class="text-sm opacity-60 mb-6">Manage settings for account <strong>{ username }</strong>.</p>
+			
+			<form hx-post="/api/user/password" hx-target="#modal-container" class="space-y-4">
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">New Password</legend>
+					<input type="password" name="password" placeholder="Min 8 characters" class="input validator w-full" required minlength="8" />
+				</fieldset>
+
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Confirm Password</legend>
+					<input type="password" name="confirm" placeholder="Repeat new password" class="input validator w-full" required minlength="8" />
+				</fieldset>
+
+				<div class="modal-action">
+					<button type="submit" class="btn btn-primary w-full">Update Password</button>
+				</div>
+			</form>
+		</div>
+		<form method="dialog" class="modal-backdrop">
+			<button hx-on:click="document.getElementById('profile_modal').remove()">close</button>
+		</form>
+	</dialog>
+}

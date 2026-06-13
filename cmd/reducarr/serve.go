@@ -27,7 +27,9 @@ var serveCmd = &cobra.Command{
 		user, pass, _ := database.GetFirstUser()
 
 		if user != "" && pass != "" {
-			fmt.Printf("\033[34m[AUTH]\033[0m Using persistent credentials from database.\n")
+			if verbose {
+				fmt.Printf("\033[34m[AUTH]\033[0m Using persistent credentials from database.\n")
+			}
 		} else {
 			// 2. If DB is empty, use ENV or Defaults
 			user = os.Getenv("REDUCARR_UI_USER")
@@ -52,11 +54,11 @@ var serveCmd = &cobra.Command{
 		}
 
 		client := getClient()
-		handler := web.NewRouter(database, client, user, pass)
+		handler := web.NewRouter(database, client, user, pass, verbose)
 
 		addr := fmt.Sprintf(":%d", port)
 		fmt.Printf("\033[32m✔\033[0m Dashboard starting on http://localhost%s\n", addr)
-		
+
 		if err := http.ListenAndServe(addr, handler); err != nil {
 			fmt.Fprintf(os.Stderr, "Server failed: %v\n", err)
 			os.Exit(1)
