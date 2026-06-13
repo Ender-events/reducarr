@@ -1,23 +1,48 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/orchestrator"
+	"github.com/Ender-events/reducarr/internal/scan"
+	"github.com/Ender-events/reducarr/internal/torrent"
+	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/devopsarr/radarr-go/radarr"
 	"github.com/devopsarr/sonarr-go/sonarr"
+	"github.com/dustin/go-humanize"
 )
+
+type ScanManager struct {
+	mu        sync.Mutex
+	isRunning bool
+}
+
+func (m *ScanManager) IsRunning() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.isRunning
+}
+
+func (m *ScanManager) SetRunning(val bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.isRunning = val
+}
+
+var globalScanManager = &ScanManager{}
 
 func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass string, verbose bool) http.Handler {
 	mux := http.NewServeMux()
 
-	// Logger helper
 	vlog := func(format string, v ...any) {
 		if verbose {
 			log.Printf("[WEB] "+format, v...)
@@ -131,7 +156,97 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		SearchPage(expectedUser).Render(r.Context(), w)
 	})
 
+	// Settings
+	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Accessing Settings page")
+		content, _ := config.GetConfigContent()
+		SettingsPage(expectedUser, content, globalScanManager.IsRunning()).Render(r.Context(), w)
+	})
+
 	// --- API Endpoints for HTMX ---
+
+	// Save Config
+	mux.HandleFunc("POST /api/config", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Saving configuration")
+		content := r.FormValue("content")
+		if err := config.SaveConfigContent(content); err != nil {
+			vlog("ERROR saving config: %v", err)
+			fmt.Fprintf(w, "<span class='text-error text-xs font-bold font-mono'>Error: %v</span>", err)
+			return
+		}
+		vlog("Configuration saved successfully")
+		fmt.Fprintf(w, "<span class='text-success text-xs font-bold font-mono'>Saved at %s</span>", time.Now().Format("15:04:05"))
+	})
+
+	// Trigger Scan
+	triggerScan := func(w http.ResponseWriter, r *http.Request, isIncremental bool) {
+		if globalScanManager.IsRunning() {
+			http.Error(w, "Scan already in progress", http.StatusConflict)
+			return
+		}
+
+		vlog("Starting manual %s scan", func() string {
+			if isIncremental {
+				return "incremental"
+			}
+			return "full"
+		}())
+
+		globalScanManager.SetRunning(true)
+
+		go func() {
+			defer globalScanManager.SetRunning(false)
+
+			// Reload config for the scan
+			cfg, _ := config.LoadConfig()
+			scorer := &scan.Scorer{}
+			if cfg.Scoring.MaxSize != "" {
+				val, _ := humanize.ParseBytes(cfg.Scoring.MaxSize)
+				scorer.MaxSize = val
+			}
+			if cfg.Scoring.MaxRatio != "" {
+				val, _ := scan.ParseRatio(cfg.Scoring.MaxRatio)
+				scorer.MaxRatio = val
+			}
+			if cfg.Scoring.MaxBitrate != "" {
+				val, _ := scan.ParseBitrate(cfg.Scoring.MaxBitrate)
+				scorer.MaxBitrate = val
+			}
+
+			uiLogger := ui.NewProgressLogger()
+
+			// Refresh Torrent Cache
+			tScanner := torrent.NewScanner(client, database, uiLogger, nil)
+			tScanner.Verbose = verbose
+			tScanner.Incremental = isIncremental
+			_ = tScanner.ScanAll(context.Background())
+
+			scanner := &scan.Scanner{
+				Client:  client,
+				DB:      database,
+				Scorer:  scorer,
+				UI:      uiLogger,
+				Verbose: verbose,
+			}
+
+			if isIncremental {
+				_ = scanner.Incremental(context.Background())
+			} else {
+				_ = scanner.Run(context.Background())
+			}
+			vlog("Manual scan complete")
+		}()
+
+		ScanControls(true).Render(r.Context(), w)
+	}
+
+	mux.HandleFunc("POST /api/scan/full", func(w http.ResponseWriter, r *http.Request) {
+		triggerScan(w, r, false)
+	})
+
+	mux.HandleFunc("POST /api/scan/incremental", func(w http.ResponseWriter, r *http.Request) {
+		triggerScan(w, r, true)
+	})
 
 	// Manual Search API
 	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {

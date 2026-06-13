@@ -1,0 +1,126 @@
+package web
+
+templ SettingsPage(username string, configContent string, scanRunning bool) {
+	@Layout("Settings", username) {
+		<div class="space-y-8">
+			<div>
+				<h1 class="text-3xl font-bold mb-1">Settings & System</h1>
+				<p class="text-base-content/60">Configure Reducarr and trigger manual operations.</p>
+			</div>
+
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+				<!-- Config Editor -->
+				<div class="lg:col-span-2 space-y-4">
+					<div class="card bg-base-100 shadow border border-base-300">
+						<div class="card-body p-0">
+							<div class="flex items-center justify-between p-4 border-b border-base-300">
+								<h2 class="card-title text-sm uppercase tracking-widest opacity-70">config.yaml</h2>
+								<div id="config-status"></div>
+							</div>
+							<form 
+								hx-post="/api/config" 
+								hx-target="#config-status"
+								hx-swap="innerHTML"
+								class="flex flex-col"
+							>
+								<textarea 
+									name="content" 
+									class="textarea font-mono text-xs p-6 h-[500px] rounded-none focus:outline-none bg-base-100 w-full"
+									spellcheck="false"
+								>{ configContent }</textarea>
+								<div class="p-4 bg-base-200 flex justify-end rounded-b-xl border-t border-base-300">
+									<button type="submit" class="btn btn-primary btn-sm px-8">Save Configuration</button>
+								</div>
+							</form>
+						</div>
+					</div>
+				</div>
+
+				<!-- System Actions -->
+				<div class="space-y-6">
+					<div class="card bg-base-100 shadow border border-base-300">
+						<div class="card-body">
+							<h2 class="card-title mb-4">Manual Scans</h2>
+							<div id="scan-controls" class="space-y-4">
+								if scanRunning {
+									<div class="alert alert-info py-3 shadow-sm border-none">
+										<span class="loading loading-spinner loading-sm"></span>
+										<span class="text-sm font-medium">Scan in progress...</span>
+									</div>
+									<button disabled class="btn btn-block btn-disabled">Start Full Scan</button>
+									<button disabled class="btn btn-block btn-disabled">Start Incremental Scan</button>
+								} else {
+									<button 
+										class="btn btn-block btn-primary"
+										hx-post="/api/scan/full"
+										hx-target="#scan-controls"
+										hx-swap="outerHTML"
+									>
+										Start Full Scan
+									</button>
+									<button 
+										class="btn btn-block btn-outline"
+										hx-post="/api/scan/incremental"
+										hx-target="#scan-controls"
+										hx-swap="outerHTML"
+									>
+										Start Incremental Scan
+									</button>
+								}
+							</div>
+							<p class="text-[10px] opacity-50 mt-4 leading-tight italic text-center">
+								Note: Scans run in the background. You can navigate away and check the Dashboard for results.
+							</p>
+						</div>
+					</div>
+
+					<div class="card bg-base-100 shadow border border-base-300">
+						<div class="card-body">
+							<h2 class="card-title text-sm opacity-70 uppercase tracking-widest mb-2">Build Info</h2>
+							<div class="space-y-1">
+								<div class="flex justify-between text-xs">
+									<span class="opacity-50">Version</span>
+									<span class="font-mono">v1.0.0-beta</span>
+								</div>
+								<div class="flex justify-between text-xs">
+									<span class="opacity-50">Go Version</span>
+									<span class="font-mono">1.24+</span>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ ScanControls(isRunning bool) {
+	<div id="scan-controls" class="space-y-4" hx-swap-oob="true">
+		if isRunning {
+			<div class="alert alert-info py-3 shadow-sm border-none">
+				<span class="loading loading-spinner loading-sm"></span>
+				<span class="text-sm font-medium">Scan started...</span>
+			</div>
+			<button disabled class="btn btn-block btn-disabled">Start Full Scan</button>
+			<button disabled class="btn btn-block btn-disabled">Start Incremental Scan</button>
+		} else {
+			<button 
+				class="btn btn-block btn-primary"
+				hx-post="/api/scan/full"
+				hx-target="#scan-controls"
+				hx-swap="outerHTML"
+			>
+				Start Full Scan
+			</button>
+			<button 
+				class="btn btn-block btn-outline"
+				hx-post="/api/scan/incremental"
+				hx-target="#scan-controls"
+				hx-swap="outerHTML"
+			>
+				Start Incremental Scan
+			</button>
+		}
+	</div>
+}

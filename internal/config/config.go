@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Ender-events/reducarr/pkg/fsutil"
@@ -68,4 +69,20 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+func GetConfigPath() string {
+	return "config.yaml"
+}
+
+func GetConfigContent() (string, error) {
+	content, err := os.ReadFile(GetConfigPath())
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func SaveConfigContent(content string) error {
+	return os.WriteFile(GetConfigPath(), []byte(content), 0644)
 }
