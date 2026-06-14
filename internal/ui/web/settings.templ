@@ -2,56 +2,28 @@ package web
 
 templ SettingsPage(username string, configContent string, scanRunning bool) {
 	@Layout("Settings", username) {
-		<div class="space-y-8">
+		<div class="space-y-8 animate-in fade-in duration-500">
 			<div>
-				<h1 class="text-3xl font-bold mb-1">Settings & System</h1>
-				<p class="text-base-content/60">Configure Reducarr and trigger manual operations.</p>
+				<h1 class="text-3xl font-bold mb-1 tracking-tight text-left">Settings</h1>
+				<p class="text-sm sm:text-base text-base-content/60 font-medium text-left">System configuration and maintenance.</p>
 			</div>
 
 			<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-				<!-- Config Editor -->
-				<div class="lg:col-span-2 space-y-4">
-					<div class="card bg-base-100 shadow border border-base-300">
-						<div class="card-body p-0">
-							<div class="flex items-center justify-between p-4 border-b border-base-300">
-								<h2 class="card-title text-sm uppercase tracking-widest opacity-70">config.yaml</h2>
-								<div id="config-status"></div>
-							</div>
-							<form
-								hx-post="/api/config"
-								hx-target="#config-status"
-								hx-swap="innerHTML"
-								class="flex flex-col"
-							>
-								<textarea
-									name="content"
-									class="textarea font-mono text-xs p-6 h-[500px] rounded-none focus:outline-none bg-base-100 w-full"
-									spellcheck="false"
-								>{ configContent }</textarea>
-								<div class="p-4 bg-base-200 flex justify-end rounded-b-xl border-t border-base-300">
-									<button type="submit" class="btn btn-primary btn-sm px-8">Save Configuration</button>
-								</div>
-							</form>
-						</div>
-					</div>
-				</div>
-
-				<!-- System Actions -->
-				<div class="space-y-6">
-					<div class="card bg-base-100 shadow border border-base-300">
+				<!-- System Actions (First on Mobile, Right Sidebar on Desktop) -->
+				<div class="space-y-6 lg:order-2">
+					<div class="card bg-base-100 shadow-sm border border-base-300">
 						<div class="card-body">
-							<h2 class="card-title mb-4">Manual Scans</h2>
-							<div id="scan-controls" class="space-y-4">
+							<h2 class="card-title text-lg font-bold">Manual Scans</h2>
+							<div id="scan-controls" class="space-y-4 mt-4">
 								if scanRunning {
-									<div class="alert alert-info py-3 shadow-sm border-none">
+									<div class="alert alert-info py-3 shadow-sm border-none bg-info/10 text-info">
 										<span class="loading loading-spinner loading-sm"></span>
-										<span class="text-sm font-medium">Scan in progress...</span>
+										<span class="text-sm font-bold uppercase tracking-tight">Scan in progress...</span>
 									</div>
-									<button disabled class="btn btn-block btn-disabled">Start Full Scan</button>
-									<button disabled class="btn btn-block btn-disabled">Start Incremental Scan</button>
+									<button disabled class="btn btn-block btn-disabled opacity-30 font-bold">Start Full Scan</button>
 								} else {
 									<button
-										class="btn btn-block btn-primary"
+										class="btn btn-block btn-primary font-bold shadow-md"
 										hx-post="/api/scan/full"
 										hx-target="#scan-controls"
 										hx-swap="outerHTML"
@@ -59,7 +31,7 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 										Start Full Scan
 									</button>
 									<button
-										class="btn btn-block btn-outline"
+										class="btn btn-block btn-outline font-bold"
 										hx-post="/api/scan/incremental"
 										hx-target="#scan-controls"
 										hx-swap="outerHTML"
@@ -68,45 +40,105 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 									</button>
 								}
 							</div>
-							<p class="text-[10px] opacity-50 mt-4 leading-tight italic text-center">
+							<p class="text-[10px] opacity-50 mt-4 leading-tight italic text-center text-left">
 								Note: Scans run in the background. You can navigate away and check the Dashboard for results.
 							</p>
 						</div>
 					</div>
 
-					<div class="card bg-base-100 shadow border border-base-300">
-						<div class="card-body">
-							<h2 class="card-title text-sm opacity-70 uppercase tracking-widest mb-2">Build Info</h2>
-							<div class="space-y-1">
+					<div class="card bg-base-100 shadow border border-base-300 overflow-hidden">
+						<div class="card-body p-0 text-left">
+							<div class="p-4 bg-base-200/50 border-b border-base-300">
+								<h2 class="card-title text-xs font-black uppercase tracking-widest opacity-40">Build Info</h2>
+							</div>
+							<div class="p-4 space-y-2">
 								<div class="flex justify-between text-xs">
 									<span class="opacity-50">Version</span>
-									<span class="font-mono">v1.0.0-beta</span>
+									<span class="font-mono font-bold">v1.0.0-beta</span>
 								</div>
 								<div class="flex justify-between text-xs">
 									<span class="opacity-50">Go Version</span>
-									<span class="font-mono">1.24+</span>
+									<span class="font-mono font-bold">1.26.3</span>
 								</div>
 							</div>
 						</div>
 					</div>
 				</div>
+
+				<!-- Config Editor (Second on Mobile, Left Main Area on Desktop) -->
+				<div class="lg:col-span-2 space-y-4 lg:order-1">
+					<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
+						<div class="card-body p-0 text-left">
+							<div class="flex items-center justify-between p-4 border-b border-base-300 bg-base-200/50 rounded-t-xl">
+								<h2 class="card-title text-xs uppercase tracking-widest font-black opacity-40">config.yaml</h2>
+								<div id="config-status"></div>
+							</div>
+
+							<div class="w-full">
+								<div id="ace-editor" style="height: 500px; width: 100%;" class="text-sm">{ configContent }</div>
+							</div>
+
+							<form
+								id="config-form"
+								hx-post="/api/config"
+								hx-target="#config-status"
+								hx-trigger="submit"
+								class="flex flex-col"
+							>
+								<!-- Hidden input to store Ace content for HTMX -->
+								<input type="hidden" name="content" id="config-content-hidden" />
+
+								<div class="p-4 bg-base-200/50 flex justify-end rounded-b-xl border-t border-base-300">
+									<button type="submit" class="btn btn-primary btn-sm px-10 font-bold shadow-lg">Save Configuration</button>
+								</div>
+							</form>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
+
+		<!-- Ace Editor Initialization -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/mode-yaml.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/theme-monokai.min.js"></script>
+		<script>
+			(function() {
+				const editor = ace.edit("ace-editor");
+				editor.setTheme("ace/theme/monokai");
+				editor.session.setMode("ace/mode/yaml");
+				editor.setOptions({
+					useSoftTabs: true,
+					tabSize: 4,
+					fontSize: "12px",
+					showPrintMargin: false,
+					scrollPastEnd: 0.1,
+				});
+				editor.resize();
+
+				const form = document.getElementById('config-form');
+				const hiddenInput = document.getElementById('config-content-hidden');
+
+				// Update hidden input before HTMX request
+				form.addEventListener('submit', function() {
+					hiddenInput.value = editor.getValue();
+				});
+			})();
+		</script>
 	}
 }
 
 templ ScanControls(isRunning bool) {
 	<div id="scan-controls" class="space-y-4" hx-swap-oob="true">
 		if isRunning {
-			<div class="alert alert-info py-3 shadow-sm border-none">
+			<div class="alert alert-info py-3 shadow-sm border-none bg-info/10 text-info">
 				<span class="loading loading-spinner loading-sm"></span>
-				<span class="text-sm font-medium">Scan started...</span>
+				<span class="text-sm font-bold uppercase tracking-tight">Scan started...</span>
 			</div>
-			<button disabled class="btn btn-block btn-disabled">Start Full Scan</button>
-			<button disabled class="btn btn-block btn-disabled">Start Incremental Scan</button>
+			<button disabled class="btn btn-block btn-disabled opacity-30 font-bold">Start Full Scan</button>
 		} else {
 			<button
-				class="btn btn-block btn-primary"
+				class="btn btn-block btn-primary font-bold shadow-md"
 				hx-post="/api/scan/full"
 				hx-target="#scan-controls"
 				hx-swap="outerHTML"
@@ -114,7 +146,7 @@ templ ScanControls(isRunning bool) {
 				Start Full Scan
 			</button>
 			<button
-				class="btn btn-block btn-outline"
+				class="btn btn-block btn-outline font-bold"
 				hx-post="/api/scan/incremental"
 				hx-target="#scan-controls"
 				hx-swap="outerHTML"

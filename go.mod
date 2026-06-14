@@ -3,6 +3,7 @@ module github.com/Ender-events/reducarr
 go 1.26.3
 
 require (
+	github.com/a-h/templ v0.3.1020
 	github.com/autobrr/go-qbittorrent v1.16.0
 	github.com/devopsarr/radarr-go v1.2.1
 	github.com/devopsarr/sonarr-go v1.1.1
@@ -17,7 +18,6 @@ require (
 
 require (
 	github.com/Masterminds/semver v1.5.0 // indirect
-	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
