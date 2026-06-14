@@ -515,6 +515,38 @@ func (d *DB) GetMediaFileByPath(path string) (*MediaFileRecord, error) {
 	return &r, nil
 }
 
+func (d *DB) GetMediaFile(instance string, fileID int32) (*MediaFileRecord, error) {
+	var r MediaFileRecord
+	err := d.QueryRow(`
+		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, season_number
+		FROM media_files WHERE arr_instance = ? AND file_id = ?`, instance, fileID).
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (d *DB) GetCandidate(instance string, fileID int32) (*CandidateRecord, error) {
+	var r CandidateRecord
+	err := d.QueryRow(`
+		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored
+		FROM candidates c
+		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		WHERE c.arr_instance = ? AND c.file_id = ?`, instance, fileID).
+		Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber, &r.Reason, &r.IsIgnored)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 func (d *DB) SearchMediaFiles(query string, limit int) ([]MediaFileRecord, error) {
 	q := "%" + query + "%"
 	rows, err := d.Query(`

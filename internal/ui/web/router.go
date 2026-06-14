@@ -163,6 +163,26 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		SettingsPage(expectedUser, content, globalScanManager.IsRunning()).Render(r.Context(), w)
 	})
 
+	// Optimization Page
+	mux.HandleFunc("GET /optimize/{instance}/{id}", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		idStr := r.PathValue("id")
+		id64, _ := strconv.ParseInt(idStr, 10, 32)
+		id := int32(id64)
+
+		vlog("Accessing Optimization page for: %s:%d", instance, id)
+
+		media, err := database.GetMediaFile(instance, id)
+		if err != nil || media == nil {
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+
+		torrents, _ := database.GetTorrentsByInode(media.Inode)
+
+		autoSearch := r.URL.Query().Get("search") == "1"
+		OptimizationPage(expectedUser, *media, torrents, autoSearch).Render(r.Context(), w)
+	})
 	// --- API Endpoints for HTMX ---
 
 	// Save Config
@@ -197,7 +217,6 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		go func() {
 			defer globalScanManager.SetRunning(false)
 
-			// Reload config for the scan
 			cfg, _ := config.LoadConfig()
 			scorer := &scan.Scorer{}
 			if cfg.Scoring.MaxSize != "" {
@@ -215,7 +234,6 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 
 			uiLogger := ui.NewProgressLogger()
 
-			// Refresh Torrent Cache
 			tScanner := torrent.NewScanner(client, database, uiLogger, nil)
 			tScanner.Verbose = verbose
 			tScanner.Incremental = isIncremental
@@ -316,17 +334,16 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		id := int32(id64)
 
 		vlog("Deleting candidate: %s:%d", instance, id)
-		candidates, _ := database.GetCandidatesWithMedia()
-		var target *db.CandidateRecord
-		for _, c := range candidates {
-			if c.ArrInstance == instance && c.FileID == id {
-				target = &c
-				break
+		target, _ := database.GetCandidate(instance, id)
+		if target == nil {
+			m, _ := database.GetMediaFile(instance, id)
+			if m != nil {
+				target = &db.CandidateRecord{MediaFileRecord: *m}
 			}
 		}
 
 		if target == nil {
-			http.Error(w, "Candidate not found", http.StatusNotFound)
+			http.Error(w, "Record not found", http.StatusNotFound)
 			return
 		}
 
@@ -339,38 +356,17 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Search Alternatives
-	mux.HandleFunc("GET /api/candidates/{instance}/{id}/search", func(w http.ResponseWriter, r *http.Request) {
+	// Fetch Releases for Optimization
+	mux.HandleFunc("GET /api/candidates/{instance}/{id}/releases", func(w http.ResponseWriter, r *http.Request) {
 		instance := r.PathValue("instance")
 		idStr := r.PathValue("id")
 		id64, _ := strconv.ParseInt(idStr, 10, 32)
 		id := int32(id64)
 
-		vlog("Searching alternatives for: %s:%d", instance, id)
+		vlog("Fetching releases for: %s:%d", instance, id)
 
-		var target db.CandidateRecord
-		found := false
-		candidates, _ := database.GetCandidatesWithMedia()
-		for _, c := range candidates {
-			if c.ArrInstance == instance && c.FileID == id {
-				target = c
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			media, _ := database.SearchMediaFiles("", 10000)
-			for _, m := range media {
-				if m.ArrInstance == instance && m.FileID == id {
-					target = db.CandidateRecord{MediaFileRecord: m}
-					found = true
-					break
-				}
-			}
-		}
-
-		if !found {
+		target, _ := database.GetMediaFile(instance, id)
+		if target == nil {
 			http.Error(w, "File not found", http.StatusNotFound)
 			return
 		}
@@ -436,7 +432,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		}
 
 		vlog("Found %d releases for %s", len(releaseInfos), target.Title)
-		SearchModal(target.Title, instance, id, releaseInfos).Render(r.Context(), w)
+		ReleaseList(expectedUser, instance, id, releaseInfos).Render(r.Context(), w)
 	})
 
 	// Grab Release
@@ -447,38 +443,26 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		id := int32(id64)
 		guid := r.FormValue("guid")
 
-		var target db.CandidateRecord
-		found := false
-		candidates, _ := database.GetCandidatesWithMedia()
-		for _, c := range candidates {
-			if c.ArrInstance == instance && c.FileID == id {
-				target = c
-				found = true
-				break
-			}
-		}
-		if !found {
-			media, _ := database.SearchMediaFiles("", 10000)
-			for _, m := range media {
-				if m.ArrInstance == instance && m.FileID == id {
-					target = db.CandidateRecord{MediaFileRecord: m}
-					found = true
-					break
-				}
+		vlog("Grabbing release with GUID %s for %s:%d", guid, instance, id)
+
+		targetRecord, _ := database.GetCandidate(instance, id)
+		if targetRecord == nil {
+			m, _ := database.GetMediaFile(instance, id)
+			if m != nil {
+				targetRecord = &db.CandidateRecord{MediaFileRecord: *m}
 			}
 		}
 
-		if !found || guid == "" {
+		if targetRecord == nil || guid == "" {
 			http.Error(w, "Invalid request", http.StatusBadRequest)
 			return
 		}
 
-		vlog("Grabbing release with GUID %s for %s", guid, target.Title)
 		orch := orchestrator.New(database, client, false, verbose)
 		var err error
-		if target.ArrType == "radarr" {
+		if targetRecord.ArrType == "radarr" {
 			inst := client.FindRadarr(instance)
-			releases, _ := inst.ListReleases(r.Context(), target.ItemID)
+			releases, _ := inst.ListReleases(r.Context(), targetRecord.ItemID)
 			var selected *radarr.ReleaseResource
 			for i := range releases {
 				if arrs.GetStringRadarr(releases[i].Guid) == guid {
@@ -487,14 +471,14 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 				}
 			}
 			if selected != nil {
-				err = orch.UpgradeCandidate(r.Context(), target, selected)
+				err = orch.UpgradeCandidate(r.Context(), *targetRecord, selected)
 			}
 		} else {
 			inst := client.FindSonarr(instance)
-			episodes, _ := inst.ListEpisodes(r.Context(), target.ItemID)
+			episodes, _ := inst.ListEpisodes(r.Context(), targetRecord.ItemID)
 			var epID int32
 			for _, ep := range episodes {
-				if ep.EpisodeFileId != nil && *ep.EpisodeFileId == target.FileID {
+				if ep.EpisodeFileId != nil && *ep.EpisodeFileId == targetRecord.FileID {
 					epID = *ep.Id
 					break
 				}
@@ -508,7 +492,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 				}
 			}
 			if selected != nil {
-				err = orch.UpgradeCandidate(r.Context(), target, selected)
+				err = orch.UpgradeCandidate(r.Context(), *targetRecord, selected)
 			}
 		}
 
@@ -518,7 +502,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			return
 		}
 
-		vlog("Successfully triggered upgrade for: %s", target.Title)
+		vlog("Successfully triggered upgrade for: %s", targetRecord.Title)
 		w.WriteHeader(http.StatusOK)
 	})
 
