@@ -1,0 +1,36 @@
+# Global settings
+dryRun: false
+
+sonarr:
+  - name: "Local Sonarr"
+    url: "http://localhost:8989"
+    apiKey: "YOUR_SONARR_API_KEY"
+    pathMappings:
+      - remote: "/media"
+        local: "/mnt/media"
+
+radarr:
+  - name: "Local Radarr"
+    url: "http://localhost:7878"
+    apiKey: "YOUR_RADARR_API_KEY"
+    pathMappings:
+      - remote: "/media"
+        local: "/mnt/media"
+
+qbittorrent:
+  - name: "Seedbox"
+    url: "http://localhost:8080"
+    username: "admin"
+    password: "adminadmin"
+    readOnly: false
+    pathMappings:
+      - remote: "/downloads/"
+        local: "/mnt/user/downloads/"
+
+scoring:
+  maxSize: "10GB"
+  maxRatio: "100MiB/min"
+  maxBitrate: "10Mbit"
+  minSeedDuration: "336h" # 2 weeks
+
+rateLimit: 50
