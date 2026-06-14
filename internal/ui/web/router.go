@@ -124,6 +124,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			PendingCandidates: stats.PendingCandidates,
 			IgnoredFiles:      stats.IgnoredFiles,
 			FailedActions:     stats.FailedActions,
+			LastScanTime:      stats.LastScanTime,
 		}
 		IndexPage(expectedUser, webStats).Render(r.Context(), w)
 	})
@@ -148,6 +149,20 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			return
 		}
 		ReportsPage(expectedUser, reports).Render(r.Context(), w)
+	})
+
+	mux.HandleFunc("GET /reports/{id}", func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+		id, _ := strconv.Atoi(idStr)
+
+		vlog("Accessing Report detail for ID: %d", id)
+		report, err := database.GetReportByID(id)
+		if err != nil || report == nil {
+			http.Error(w, "Report not found", http.StatusNotFound)
+			return
+		}
+
+		ReportDetailPage(expectedUser, *report).Render(r.Context(), w)
 	})
 
 	// Search

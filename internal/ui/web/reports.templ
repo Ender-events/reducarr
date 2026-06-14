@@ -30,9 +30,11 @@ templ ReportItem(username string, r db.ReportRecord) {
 			</div>
 
 			<!-- Item Title & Path -->
-			<div class="flex flex-col min-w-0">
-				<span class="font-bold truncate text-sm sm:text-base group-hover:text-primary transition-colors">{ r.ItemTitle }</span>
-				<span class="text-[10px] sm:text-xs opacity-50 truncate" title={ r.MainFilePath }>{ r.MainFilePath }</span>
+			<div class="flex flex-col min-w-0 text-left">
+				<a href={ templ.SafeURL(fmt.Sprintf("/reports/%d", r.ID)) } class="font-bold truncate text-sm sm:text-base group-hover:text-primary transition-colors text-left">
+					{ r.ItemTitle }
+				</a>
+				<span class="text-[10px] sm:text-xs opacity-50 truncate text-left" title={ r.MainFilePath }>{ r.MainFilePath }</span>
 			</div>
 
 			<!-- Status (Desktop Only) -->

@@ -1,0 +1,135 @@
+package web
+
+import (
+	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/dustin/go-humanize"
+)
+
+templ ReportDetailPage(username string, r db.ReportRecord) {
+	@Layout("Report Detail", username) {
+		<div class="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
+			<div class="flex items-center gap-4">
+				<a href="/reports" class="btn btn-ghost btn-sm btn-circle">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+				</a>
+				<h2 class="text-2xl font-black tracking-tight">Report Detail</h2>
+			</div>
+
+			<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+				<!-- Main Info -->
+				<div class="lg:col-span-2 space-y-6">
+					<div class="card bg-base-100 shadow-sm border border-base-300">
+						<div class="card-body p-8">
+							<div class="flex items-center justify-between mb-4">
+								<div class={ "badge font-black uppercase tracking-widest px-4 py-3", templ.KV("badge-primary", r.ActionType == "UPGRADE"), templ.KV("badge-secondary", r.ActionType == "DELETE") }>
+									{ r.ActionType }
+								</div>
+								<span class="font-mono text-sm opacity-50">{ r.CreatedAt }</span>
+							</div>
+
+							<h1 class="text-3xl font-black tracking-tight mb-2">{ r.ItemTitle }</h1>
+							<div class="bg-base-200 p-4 rounded-xl border border-base-300 font-mono text-xs opacity-70 break-all">
+								{ r.MainFilePath }
+							</div>
+
+							<div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
+								<div class="space-y-1">
+									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest">Instance</p>
+									<p class="font-bold">{ r.ArrInstance } <span class="opacity-50 text-xs uppercase">({ r.ArrType })</span></p>
+								</div>
+								<div class="space-y-1 text-right md:text-left">
+									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest">Status</p>
+									if r.Status == "SUCCESS" {
+										<div class="badge badge-success font-bold">Success</div>
+									} else {
+										<div class="badge badge-error font-bold">Failed</div>
+									}
+								</div>
+							</div>
+
+							if r.ErrorMessage != "" {
+								<div class="mt-8 p-4 bg-error/10 border border-error/20 rounded-xl text-error">
+									<p class="text-[10px] uppercase font-black opacity-60 tracking-widest mb-2 text-left">Error Message</p>
+									<p class="text-sm font-medium">{ r.ErrorMessage }</p>
+								</div>
+							}
+						</div>
+					</div>
+
+					<!-- Savings / Changes -->
+					<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
+						<div class="p-4 bg-base-200/50 border-b border-base-300">
+							<h2 class="card-title text-sm font-black uppercase tracking-widest opacity-40">Optimization Stats</h2>
+						</div>
+						<div class="card-body p-8">
+							<div class="grid grid-cols-1 sm:grid-cols-3 gap-8">
+								<div class="space-y-1">
+									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest">Size Before</p>
+									<p class="font-mono text-xl font-bold">{ humanize.Bytes(uint64(r.TotalSizeBefore)) }</p>
+								</div>
+								<div class="space-y-1">
+									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest">Size After</p>
+									<p class="font-mono text-xl font-bold">{ humanize.Bytes(uint64(r.TotalSizeAfter)) }</p>
+								</div>
+								<div class="space-y-1">
+									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-success">Net Saved</p>
+									<p class="font-mono text-xl font-bold text-success">
+										if r.ActionType == "UPGRADE" {
+											+{ humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter)) }
+										} else {
+											+{ humanize.Bytes(uint64(r.TotalSizeBefore)) }
+										}
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Side Details -->
+				<div class="space-y-6">
+					if r.ActionType == "UPGRADE" && r.NewReleaseTitle != "" {
+						<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
+							<div class="p-4 bg-base-200/50 border-b border-base-300 text-left">
+								<h2 class="card-title text-sm font-black uppercase tracking-widest opacity-40">New Version</h2>
+							</div>
+							<div class="card-body p-4 text-left">
+								<p class="text-xs font-bold leading-tight mb-2">{ r.NewReleaseTitle }</p>
+								<div class="flex items-center justify-between">
+									<span class="text-[10px] uppercase font-black opacity-30">Indexer</span>
+									<span class="badge badge-neutral badge-xs font-bold uppercase">{ r.NewIndexer }</span>
+								</div>
+							</div>
+						</div>
+					}
+
+					if r.DeletedFiles != "" {
+						<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
+							<div class="p-4 bg-base-200/50 border-b border-base-300 text-left">
+								<h2 class="card-title text-sm font-black uppercase tracking-widest opacity-40">Deleted Files</h2>
+							</div>
+							<div class="card-body p-4 text-left">
+								<div class="bg-base-200 rounded-lg p-2 font-mono text-[10px] opacity-60 max-h-40 overflow-y-auto whitespace-pre-wrap">
+									{ r.DeletedFiles }
+								</div>
+							</div>
+						</div>
+					}
+
+					if r.DeletedTorrents != "" {
+						<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
+							<div class="p-4 bg-base-200/50 border-b border-base-300 text-left">
+								<h2 class="card-title text-sm font-black uppercase tracking-widest opacity-40">Removed Torrents</h2>
+							</div>
+							<div class="card-body p-4 text-left">
+								<div class="bg-base-200 rounded-lg p-2 font-mono text-[10px] opacity-60 max-h-40 overflow-y-auto whitespace-pre-wrap">
+									{ r.DeletedTorrents }
+								</div>
+							</div>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+	}
+}

@@ -246,6 +246,7 @@ type DashboardStats struct {
 	PendingCandidates int
 	IgnoredFiles      int
 	FailedActions     int
+	LastScanTime      string
 }
 
 func (d *DB) GetDashboardStats() (DashboardStats, error) {
@@ -281,6 +282,12 @@ func (d *DB) GetDashboardStats() (DashboardStats, error) {
 	err = d.QueryRow("SELECT COUNT(*) FROM reports WHERE status = 'FAILED'").Scan(&s.FailedActions)
 	if err != nil {
 		return s, err
+	}
+
+	// Last scan time (max updated_at from scan_state)
+	err = d.QueryRow("SELECT COALESCE(MAX(updated_at), 'Never') FROM scan_state").Scan(&s.LastScanTime)
+	if err != nil {
+		s.LastScanTime = "Never"
 	}
 
 	return s, nil

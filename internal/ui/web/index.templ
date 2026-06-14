@@ -10,6 +10,7 @@ type DashboardStats struct {
 	PendingCandidates int
 	IgnoredFiles      int
 	FailedActions     int
+	LastScanTime      string
 }
 
 templ IndexPage(username string, stats DashboardStats) {
@@ -64,7 +65,7 @@ templ IndexPage(username string, stats DashboardStats) {
 				<div class="card bg-base-100 shadow border border-base-300">
 					<div class="card-body">
 						<h2 class="card-title">Quick Actions</h2>
-						<p>Common tasks you might want to perform.</p>
+						<p>Common tasks you might perform.</p>
 						<div class="card-actions justify-start mt-4">
 							<a href="/candidates" class="btn btn-primary">Review Candidates</a>
 							<a href="/search" class="btn btn-outline">Manual Search</a>
@@ -82,7 +83,7 @@ templ IndexPage(username string, stats DashboardStats) {
 							</div>
 							<div class="flex items-center justify-between">
 								<span class="text-sm opacity-70">Last Scan</span>
-								<span class="text-sm font-medium">Just now</span>
+								<span class="text-sm font-medium">{ stats.LastScanTime }</span>
 							</div>
 						</div>
 					</div>
