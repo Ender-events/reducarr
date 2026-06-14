@@ -17,14 +17,14 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 								<h2 class="card-title text-sm uppercase tracking-widest opacity-70">config.yaml</h2>
 								<div id="config-status"></div>
 							</div>
-							<form 
-								hx-post="/api/config" 
+							<form
+								hx-post="/api/config"
 								hx-target="#config-status"
 								hx-swap="innerHTML"
 								class="flex flex-col"
 							>
-								<textarea 
-									name="content" 
+								<textarea
+									name="content"
 									class="textarea font-mono text-xs p-6 h-[500px] rounded-none focus:outline-none bg-base-100 w-full"
 									spellcheck="false"
 								>{ configContent }</textarea>
@@ -50,7 +50,7 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 									<button disabled class="btn btn-block btn-disabled">Start Full Scan</button>
 									<button disabled class="btn btn-block btn-disabled">Start Incremental Scan</button>
 								} else {
-									<button 
+									<button
 										class="btn btn-block btn-primary"
 										hx-post="/api/scan/full"
 										hx-target="#scan-controls"
@@ -58,7 +58,7 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 									>
 										Start Full Scan
 									</button>
-									<button 
+									<button
 										class="btn btn-block btn-outline"
 										hx-post="/api/scan/incremental"
 										hx-target="#scan-controls"
@@ -105,7 +105,7 @@ templ ScanControls(isRunning bool) {
 			<button disabled class="btn btn-block btn-disabled">Start Full Scan</button>
 			<button disabled class="btn btn-block btn-disabled">Start Incremental Scan</button>
 		} else {
-			<button 
+			<button
 				class="btn btn-block btn-primary"
 				hx-post="/api/scan/full"
 				hx-target="#scan-controls"
@@ -113,7 +113,7 @@ templ ScanControls(isRunning bool) {
 			>
 				Start Full Scan
 			</button>
-			<button 
+			<button
 				class="btn btn-block btn-outline"
 				hx-post="/api/scan/incremental"
 				hx-target="#scan-controls"

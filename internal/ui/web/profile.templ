@@ -26,7 +26,7 @@ templ ChangePasswordModal(username string, errorMessage string, success bool) {
 			}
 
 			<p class="text-sm opacity-60 mb-6">Manage settings for account <strong>{ username }</strong>.</p>
-			
+
 			<form hx-post="/api/user/password" hx-target="#modal-container" class="space-y-4">
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">New Password</legend>
