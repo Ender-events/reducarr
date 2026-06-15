@@ -54,7 +54,7 @@ var serveCmd = &cobra.Command{
 		}
 
 		client := getClient()
-		handler := web.NewRouter(database, client, user, pass, verbose)
+		handler := web.NewRouter(database, client, verbose)
 
 		addr := fmt.Sprintf(":%d", port)
 		fmt.Printf("\033[32m✔\033[0m Dashboard starting on http://localhost%s\n", addr)

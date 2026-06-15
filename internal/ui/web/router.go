@@ -40,7 +40,12 @@ func (m *ScanManager) SetRunning(val bool) {
 
 var globalScanManager = &ScanManager{}
 
-func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass string, verbose bool) http.Handler {
+func getUser(r *http.Request) string {
+	u, _ := r.Context().Value(UserContextKey).(string)
+	return u
+}
+
+func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler {
 	mux := http.NewServeMux()
 
 	vlog := func(format string, v ...any) {
@@ -72,13 +77,9 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		user := r.FormValue("username")
 		pass := r.FormValue("password")
 
-		dbPass, _ := database.GetUser(user)
-		targetPass := expectedPass
-		if dbPass != "" {
-			targetPass = dbPass
-		}
-
-		if user != expectedUser || pass != targetPass {
+		// Pure Database Auth with Bcrypt
+		ok, err := database.AuthenticateUser(user, pass)
+		if err != nil || !ok {
 			vlog("Failed login attempt for user: %s", user)
 			LoginPage("Invalid username or password").Render(r.Context(), w)
 			return
@@ -100,7 +101,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 	mux.HandleFunc("POST /logout", func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("reducarr_session")
 		if err == nil {
-			vlog("User logging out: %s", expectedUser)
+			vlog("User logging out: %s", getUser(r))
 			_ = database.DeleteSession(cookie.Value)
 		}
 		ClearSessionCookie(w)
@@ -126,7 +127,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			FailedActions:     stats.FailedActions,
 			LastScanTime:      stats.LastScanTime,
 		}
-		IndexPage(expectedUser, webStats).Render(r.Context(), w)
+		IndexPage(getUser(r), webStats).Render(r.Context(), w)
 	})
 
 	// Candidates
@@ -137,7 +138,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		CandidatesPage(expectedUser, candidates).Render(r.Context(), w)
+		CandidatesPage(getUser(r), candidates).Render(r.Context(), w)
 	})
 
 	// Reports
@@ -148,7 +149,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		ReportsPage(expectedUser, reports).Render(r.Context(), w)
+		ReportsPage(getUser(r), reports).Render(r.Context(), w)
 	})
 
 	mux.HandleFunc("GET /reports/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -162,20 +163,20 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			return
 		}
 
-		ReportDetailPage(expectedUser, *report).Render(r.Context(), w)
+		ReportDetailPage(getUser(r), *report).Render(r.Context(), w)
 	})
 
 	// Search
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Search page")
-		SearchPage(expectedUser).Render(r.Context(), w)
+		SearchPage(getUser(r)).Render(r.Context(), w)
 	})
 
 	// Settings
 	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Settings page")
 		content, _ := config.GetConfigContent()
-		SettingsPage(expectedUser, content, globalScanManager.IsRunning()).Render(r.Context(), w)
+		SettingsPage(getUser(r), content, globalScanManager.IsRunning()).Render(r.Context(), w)
 	})
 
 	// Optimization Page
@@ -196,7 +197,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		torrents, _ := database.GetTorrentsByInode(media.Inode)
 
 		autoSearch := r.URL.Query().Get("search") == "1"
-		OptimizationPage(expectedUser, *media, torrents, autoSearch).Render(r.Context(), w)
+		OptimizationPage(getUser(r), *media, torrents, autoSearch).Render(r.Context(), w)
 	})
 	// --- API Endpoints for HTMX ---
 
@@ -293,37 +294,37 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		SearchResults(expectedUser, results).Render(r.Context(), w)
+		SearchResults(getUser(r), results).Render(r.Context(), w)
 	})
 
 	// Profile Modal
 	mux.HandleFunc("GET /api/user/password", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Opening profile modal")
-		ChangePasswordModal(expectedUser, "", false).Render(r.Context(), w)
+		ChangePasswordModal(getUser(r), "", false).Render(r.Context(), w)
 	})
 
 	// Change Password Action
 	mux.HandleFunc("POST /api/user/password", func(w http.ResponseWriter, r *http.Request) {
-		vlog("Updating password for user: %s", expectedUser)
+		vlog("Updating password for user: %s", getUser(r))
 		pass := r.FormValue("password")
 		confirm := r.FormValue("confirm")
 
 		if pass != confirm {
-			ChangePasswordModal(expectedUser, "Passwords do not match.", false).Render(r.Context(), w)
+			ChangePasswordModal(getUser(r), "Passwords do not match.", false).Render(r.Context(), w)
 			return
 		}
 
 		if len(pass) < 8 {
-			ChangePasswordModal(expectedUser, "Password must be at least 8 characters.", false).Render(r.Context(), w)
+			ChangePasswordModal(getUser(r), "Password must be at least 8 characters.", false).Render(r.Context(), w)
 			return
 		}
 
-		if err := database.UpsertUser(expectedUser, pass); err != nil {
-			ChangePasswordModal(expectedUser, "Failed to update password in database.", false).Render(r.Context(), w)
+		if err := database.UpsertUser(getUser(r), pass); err != nil {
+			ChangePasswordModal(getUser(r), "Failed to update password in database.", false).Render(r.Context(), w)
 			return
 		}
 
-		ChangePasswordModal(expectedUser, "", true).Render(r.Context(), w)
+		ChangePasswordModal(getUser(r), "", true).Render(r.Context(), w)
 	})
 
 	// Ignore Candidate
@@ -447,7 +448,7 @@ func NewRouter(database *db.DB, client *arrs.Client, expectedUser, expectedPass 
 		}
 
 		vlog("Found %d releases for %s", len(releaseInfos), target.Title)
-		ReleaseList(expectedUser, instance, id, releaseInfos).Render(r.Context(), w)
+		ReleaseList(getUser(r), instance, id, releaseInfos).Render(r.Context(), w)
 	})
 
 	// Grab Release

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"math/big"
@@ -9,6 +10,10 @@ import (
 
 	"github.com/Ender-events/reducarr/internal/db"
 )
+
+type contextKey string
+
+const UserContextKey contextKey = "user"
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.?!_+*-"
 
@@ -45,14 +50,15 @@ func SessionAuth(database *db.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			_, err = database.GetSession(cookie.Value)
+			username, err := database.GetSession(cookie.Value)
 			if err != nil {
 				// Invalid or expired session
 				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), UserContextKey, username)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

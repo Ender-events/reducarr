@@ -7,6 +7,7 @@ import (
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/ui/web"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
@@ -38,9 +39,9 @@ var usersListCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "USERNAME\tPASSWORD\tUPDATED AT")
+		fmt.Fprintln(w, "USERNAME\tUPDATED AT")
 		for _, u := range users {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", u.Username, u.Password, u.UpdatedAt)
+			fmt.Fprintf(w, "%s\t%s\n", u.Username, u.UpdatedAt)
 		}
 		w.Flush()
 	},
@@ -62,8 +63,13 @@ var usersAddCmd = &cobra.Command{
 		if len(args) > 0 {
 			username = args[0]
 		} else {
-			fmt.Print("Enter username: ")
-			fmt.Scanln(&username)
+			prompt := promptui.Prompt{
+				Label: "Enter Username",
+			}
+			username, err = prompt.Run()
+			if err != nil {
+				return
+			}
 		}
 
 		if username == "" {
@@ -75,9 +81,20 @@ var usersAddCmd = &cobra.Command{
 		if len(args) > 1 {
 			password = args[1]
 		} else {
-			generated, _ := web.GenerateRandomPassword(8)
-			password = generated
-			fmt.Printf("No password provided. Generated: %s\n", password)
+			prompt := promptui.Prompt{
+				Label: "Enter Password (leave empty for random)",
+				Mask:  '*',
+			}
+			password, err = prompt.Run()
+			if err != nil {
+				return
+			}
+
+			if password == "" {
+				generated, _ := web.GenerateRandomPassword(8)
+				password = generated
+				fmt.Printf("\033[33mNo password provided. Generated:\033[0m %s\n", password)
+			}
 		}
 
 		if err := database.UpsertUser(username, password); err != nil {

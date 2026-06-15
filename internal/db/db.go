@@ -6,6 +6,7 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type DB struct {
@@ -389,14 +390,40 @@ func (d *DB) GetFirstUser() (string, string, error) {
 }
 
 func (d *DB) UpsertUser(username, password string) error {
-	_, err := d.Exec(`
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	_, err = d.Exec(`
 		INSERT INTO users (username, password, updated_at)
 		VALUES (?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(username) DO UPDATE SET
 			password = excluded.password,
 			updated_at = excluded.updated_at
-	`, username, password)
+	`, username, string(hashed))
 	return err
+}
+
+func (d *DB) AuthenticateUser(username, password string) (bool, error) {
+	var hashed string
+	err := d.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&hashed)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(hashed), []byte(password))
+	if err == bcrypt.ErrMismatchedHashAndPassword {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (d *DB) CreateSession(token, username string, expiresAt time.Time) error {
