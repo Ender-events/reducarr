@@ -33,4 +33,10 @@ scoring:
   maxBitrate: "10Mbit"
   minSeedDuration: "336h" # 2 weeks
 
+automation:
+  # Cron expression for background tasks (Incremental scan)
+  # Example: "7 4 * * *" runs every day at 04:07 AM
+  # Leave empty to disable
+  schedule: ""
+
 rateLimit: 50

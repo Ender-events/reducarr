@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/Ender-events/reducarr/internal/orchestrator"
 	"github.com/Ender-events/reducarr/internal/ui/web"
 	"github.com/spf13/cobra"
 )
@@ -55,6 +56,16 @@ var serveCmd = &cobra.Command{
 
 		client := getClient()
 		handler := web.NewRouter(database, client, verbose)
+
+		// Start background automation if scheduled
+		autoManager, err := orchestrator.NewAutomationManager(database, verbose)
+		if err == nil {
+			go func() {
+				if err := autoManager.Start(cmd.Context()); err != nil {
+					fmt.Printf("\033[31m✘\033[0m Automation failed: %v\n", err)
+				}
+			}()
+		}
 
 		addr := fmt.Sprintf(":%d", port)
 		fmt.Printf("\033[32m✔\033[0m Dashboard starting on http://localhost%s\n", addr)
