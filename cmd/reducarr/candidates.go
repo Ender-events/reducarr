@@ -3,14 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/orchestrator"
+	"github.com/Ender-events/reducarr/internal/release"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/devopsarr/radarr-go/radarr"
@@ -270,46 +269,15 @@ func showTorrentContext(item displayItem, database *db.DB) {
 	}
 }
 
-type genericRelease struct {
-	Title      string
-	Size       int64
-	Indexer    string
-	Seeders    int32
-	Quality    string
-	Protocol   string
-	Rejections []string
-	Score      *int32
-	Raw        any
-}
-
-func sortAndSelectRelease(releases []genericRelease, item displayItem, database *db.DB) any {
+func sortAndSelectRelease(releases []release.Release, item displayItem, database *db.DB) any {
 	if len(releases) == 0 {
 		fmt.Println("No releases found.")
 		return nil
 	}
 
-	// 1. Sort
-	sort.Slice(releases, func(i, j int) bool {
-		iApproved := len(releases[i].Rejections) == 0
-		jApproved := len(releases[j].Rejections) == 0
-		if iApproved != jApproved {
-			return iApproved
-		}
-
-		ci := getScore(releases[i].Score)
-		cj := getScore(releases[j].Score)
-		if ci != cj {
-			return ci > cj
-		}
-
-		si := getRejectionSeverity(releases[i].Rejections)
-		sj := getRejectionSeverity(releases[j].Rejections)
-		if si != sj {
-			return si < sj
-		}
-
-		return releases[i].Size < releases[j].Size
-	})
+	// 1. Sort using release engine
+	engine := release.NewEngine("", 0)
+	engine.Sort(releases)
 
 	// 2. Templates
 	templates := &promptui.SelectTemplates{
@@ -430,7 +398,7 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB, orch *orches
 		return
 	}
 
-	releases := make([]genericRelease, len(rawReleases))
+	releases := make([]release.Release, len(rawReleases))
 	for i, r := range rawReleases {
 		quality := ""
 		if r.Quality != nil && r.Quality.Quality != nil {
@@ -447,7 +415,7 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB, orch *orches
 			protocol = string(*r.Protocol)
 		}
 
-		releases[i] = genericRelease{
+		releases[i] = release.Release{
 			Title:      arrs.GetStringRadarr(r.Title),
 			Size:       *r.Size,
 			Indexer:    arrs.GetStringRadarr(r.Indexer),
@@ -542,7 +510,7 @@ func searchForSonarrAlternatives(item displayItem, database *db.DB, orch *orches
 		return
 	}
 
-	releases := make([]genericRelease, len(rawReleases))
+	releases := make([]release.Release, len(rawReleases))
 	for i, r := range rawReleases {
 		quality := ""
 		if r.Quality != nil && r.Quality.Quality != nil {
@@ -559,7 +527,7 @@ func searchForSonarrAlternatives(item displayItem, database *db.DB, orch *orches
 			protocol = string(*r.Protocol)
 		}
 
-		releases[i] = genericRelease{
+		releases[i] = release.Release{
 			Title:      arrs.GetString(r.Title),
 			Size:       *r.Size,
 			Indexer:    arrs.GetString(r.Indexer),
@@ -591,34 +559,6 @@ func isCandidate(fileID int32, instance string, database *db.DB) bool {
 	var exists bool
 	_ = database.QueryRow("SELECT EXISTS(SELECT 1 FROM candidates WHERE file_id = ? AND arr_instance = ?)", fileID, instance).Scan(&exists)
 	return exists
-}
-
-func getScore(s *int32) int32 {
-	if s == nil {
-		return math.MinInt32
-	}
-	return *s
-}
-
-func getRejectionSeverity(rejections []string) int {
-	if len(rejections) == 0 {
-		return 0 // Approved
-	}
-
-	hasGeneral := false
-	for _, r := range rejections {
-		if strings.Contains(r, "Unknown Movie") {
-			return 3 // Absolute worst
-		}
-		if !strings.Contains(r, "Quality profile does not allow upgrades") {
-			hasGeneral = true
-		}
-	}
-
-	if hasGeneral {
-		return 2
-	}
-	return 1
 }
 
 func init() {

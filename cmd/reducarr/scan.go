@@ -82,6 +82,20 @@ var scanCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		// Acquire scan lock
+		acquired, err := database.AcquireScanLock("global_scan", os.Getpid(), "cli", 3600)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error acquiring scan lock: %v\n", err)
+			os.Exit(1)
+		}
+		if !acquired {
+			fmt.Fprintf(os.Stderr, "Error: A scan is already in progress (acquired by another CLI process or background scheduler).\n")
+			os.Exit(1)
+		}
+		defer func() {
+			_ = database.ReleaseScanLock("global_scan")
+		}()
+
 		// 3. Setup Client
 		var sonarrInstances []arrs.ArrInstance
 		for _, s := range cfg.Sonarr {

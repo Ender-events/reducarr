@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
 	"golang.org/x/crypto/bcrypt"
+	_ "modernc.org/sqlite"
 )
 
 type DB struct {
@@ -105,6 +105,12 @@ func (d *DB) migrate() error {
 			expires_at DATETIME,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (username) REFERENCES users (username) ON DELETE CASCADE
+		);`,
+		`CREATE TABLE IF NOT EXISTS scan_locks (
+			lock_name TEXT PRIMARY KEY,
+			holder_pid INTEGER,
+			holder_type TEXT,
+			acquired_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
 	}
 
@@ -256,10 +262,10 @@ func (d *DB) GetDashboardStats() (DashboardStats, error) {
 	// Total saved: sum(size_before - size_after) for UPGRADE, plus size_before for DELETE
 	err := d.QueryRow(`
 		SELECT COALESCE(SUM(
-			CASE 
+			CASE
 				WHEN action_type = 'UPGRADE' THEN total_size_before - total_size_after
 				WHEN action_type = 'DELETE' THEN total_size_before
-				ELSE 0 
+				ELSE 0
 			END), 0)
 		FROM reports WHERE status = 'SUCCESS'
 	`).Scan(&s.TotalSpaceSaved)
@@ -722,5 +728,48 @@ func (d *DB) DeleteReport(id int) error {
 
 func (d *DB) ClearReports() error {
 	_, err := d.Exec("DELETE FROM reports")
+	return err
+}
+
+func (d *DB) AcquireScanLock(lockName string, pid int, holderType string, maxDurationSeconds int) (bool, error) {
+	// Attempt to insert the lock
+	_, err := d.Exec(`
+		INSERT INTO scan_locks (lock_name, holder_pid, holder_type)
+		VALUES (?, ?, ?)
+	`, lockName, pid, holderType)
+	if err == nil {
+		return true, nil
+	}
+
+	// Lock insertion failed, let's see if the existing lock is too old (zombie lock)
+	var ageSeconds int
+	errRow := d.QueryRow(`
+		SELECT (strftime('%s', 'now') - strftime('%s', acquired_at)) FROM scan_locks WHERE lock_name = ?
+	`, lockName).Scan(&ageSeconds)
+	if errRow == sql.ErrNoRows {
+		// Try again just in case it was deleted in the millisecond between insert and query
+		_, errRetry := d.Exec(`
+			INSERT INTO scan_locks (lock_name, holder_pid, holder_type)
+			VALUES (?, ?, ?)
+		`, lockName, pid, holderType)
+		if errRetry == nil {
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to acquire lock after retry: %w", errRetry)
+	} else if errRow != nil {
+		return false, fmt.Errorf("query scan lock: %w", errRow)
+	}
+
+	// If the lock is held longer than maxDurationSeconds, break it
+	if ageSeconds > maxDurationSeconds {
+		_, _ = d.Exec("DELETE FROM scan_locks WHERE lock_name = ?", lockName)
+		return d.AcquireScanLock(lockName, pid, holderType, maxDurationSeconds)
+	}
+
+	return false, nil
+}
+
+func (d *DB) ReleaseScanLock(lockName string) error {
+	_, err := d.Exec("DELETE FROM scan_locks WHERE lock_name = ?", lockName)
 	return err
 }

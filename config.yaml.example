@@ -39,4 +39,14 @@ automation:
   # Leave empty to disable
   schedule: ""
 
-rateLimit: 50
+  # Enable automatic deletion and upgrade of candidates without confirmation
+  autoUpgrade: false
+
+  # Minimum size reduction required to trigger auto-upgrade (e.g. percentage "10%" or absolute size "500MiB")
+  minSizeReduction: "10%"
+
+  # Minimum seeders required for a candidate release torrent to be grabbed
+  minSeeders: 3
+
+  # Maximum Arr searches triggered per hour
+  rateLimit: 6

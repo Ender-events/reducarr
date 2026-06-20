@@ -33,7 +33,11 @@ type ScoringConfig struct {
 }
 
 type AutomationConfig struct {
-	Schedule string `mapstructure:"schedule"`
+	Schedule         string `mapstructure:"schedule"`
+	AutoUpgrade      bool   `mapstructure:"autoUpgrade"`
+	MinSizeReduction string `mapstructure:"minSizeReduction"`
+	MinSeeders       int32  `mapstructure:"minSeeders"`
+	RateLimit        int    `mapstructure:"rateLimit"` // searches per hour
 }
 
 type Config struct {
@@ -42,7 +46,6 @@ type Config struct {
 	QBittorrent []QBittorrentConfig `mapstructure:"qbittorrent"`
 	Scoring     ScoringConfig       `mapstructure:"scoring"`
 	Automation  AutomationConfig    `mapstructure:"automation"`
-	RateLimit   int                 `mapstructure:"rateLimit"` // searches per hour
 	DryRun      bool                `mapstructure:"dryRun"`
 }
 
@@ -55,13 +58,16 @@ func LoadConfig() (*Config, error) {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	// Defaults
-	viper.SetDefault("rateLimit", 50)
 	viper.SetDefault("dryRun", false)
 	viper.SetDefault("scoring.maxSize", "")
 	viper.SetDefault("scoring.maxRatio", "100MiB/min")
 	viper.SetDefault("scoring.maxBitrate", "")
 	viper.SetDefault("scoring.minSeedDuration", "336h") // 2 weeks
 	viper.SetDefault("automation.schedule", "")
+	viper.SetDefault("automation.autoUpgrade", false)
+	viper.SetDefault("automation.minSizeReduction", "10%")
+	viper.SetDefault("automation.minSeeders", 3)
+	viper.SetDefault("automation.rateLimit", 6)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

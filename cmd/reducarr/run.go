@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var autoUpgrade bool
+
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Start the background automation loop",
@@ -24,7 +26,12 @@ var runCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		manager, err := orchestrator.NewAutomationManager(database, verbose)
+		autoUpgradeVal := cfg.Automation.AutoUpgrade
+		if cmd.Flags().Changed("auto-upgrade") {
+			autoUpgradeVal = autoUpgrade
+		}
+
+		manager, err := orchestrator.NewAutomationManager(database, verbose, dryRun, autoUpgradeVal)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating automation manager: %v\n", err)
 			os.Exit(1)
@@ -50,5 +57,7 @@ var runCmd = &cobra.Command{
 }
 
 func init() {
+	runCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Do not perform any destructive actions (torrent deletion, release grab)")
+	runCmd.Flags().BoolVar(&autoUpgrade, "auto-upgrade", false, "Override auto-upgrade setting from config")
 	rootCmd.AddCommand(runCmd)
 }

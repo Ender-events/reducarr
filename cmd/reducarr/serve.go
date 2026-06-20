@@ -58,7 +58,7 @@ var serveCmd = &cobra.Command{
 		handler := web.NewRouter(database, client, verbose)
 
 		// Start background automation if scheduled
-		autoManager, err := orchestrator.NewAutomationManager(database, verbose)
+		autoManager, err := orchestrator.NewAutomationManager(database, verbose, cfg.DryRun, cfg.Automation.AutoUpgrade)
 		if err == nil {
 			go func() {
 				if err := autoManager.Start(cmd.Context()); err != nil {
