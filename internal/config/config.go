@@ -96,5 +96,25 @@ func GetConfigContent() (string, error) {
 }
 
 func SaveConfigContent(content string) error {
-	return os.WriteFile(GetConfigPath(), []byte(content), 0644)
+	oldCfg, err := LoadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load config: %v\n", err)
+	}
+
+	// Write new config to file
+	if err := os.WriteFile(GetConfigPath(), []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Load new config to compare
+	newCfg, err := LoadConfig()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load new config after save: %v\n", err)
+		return nil
+	}
+
+	// Notify subscribers about config changes
+	NotifyConfigChanged(oldCfg, newCfg)
+
+	return nil
 }

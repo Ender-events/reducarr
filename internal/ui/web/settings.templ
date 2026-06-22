@@ -7,7 +7,6 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 				<h1 class="text-3xl font-bold mb-1 tracking-tight text-left">Settings</h1>
 				<p class="text-sm sm:text-base text-base-content/60 font-medium text-left">System configuration and maintenance.</p>
 			</div>
-
 			<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 				<!-- System Actions (First on Mobile, Right Sidebar on Desktop) -->
 				<div class="space-y-6 lg:order-2">
@@ -45,7 +44,6 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 							</p>
 						</div>
 					</div>
-
 					<div class="card bg-base-100 shadow border border-base-300 overflow-hidden">
 						<div class="card-body p-0 text-left">
 							<div class="p-4 bg-base-200/50 border-b border-base-300">
@@ -64,7 +62,6 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 						</div>
 					</div>
 				</div>
-
 				<!-- Config Editor (Second on Mobile, Left Main Area on Desktop) -->
 				<div class="lg:col-span-2 space-y-4 lg:order-1">
 					<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
@@ -73,11 +70,9 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 								<h2 class="card-title text-xs uppercase tracking-widest font-black opacity-40">config.yaml</h2>
 								<div id="config-status"></div>
 							</div>
-
 							<div class="w-full">
 								<div id="ace-editor" style="height: 500px; width: 100%;" class="text-sm">{ configContent }</div>
 							</div>
-
 							<form
 								id="config-form"
 								hx-post="/api/config"
@@ -86,8 +81,7 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 								class="flex flex-col"
 							>
 								<!-- Hidden input to store Ace content for HTMX -->
-								<input type="hidden" name="content" id="config-content-hidden" />
-
+								<input type="hidden" name="content" id="config-content-hidden"/>
 								<div class="p-4 bg-base-200/50 flex justify-end rounded-b-xl border-t border-base-300">
 									<button type="submit" class="btn btn-primary btn-sm px-10 font-bold shadow-lg">Save Configuration</button>
 								</div>
@@ -97,11 +91,10 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 				</div>
 			</div>
 		</div>
-
 		<!-- Ace Editor Initialization -->
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.min.js"></script>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/mode-yaml.min.js"></script>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/theme-monokai.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/ace.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-yaml.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/theme-monokai.min.js"></script>
 		<script>
 			(function() {
 				const editor = ace.edit("ace-editor");

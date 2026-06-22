@@ -28,6 +28,7 @@ type AutomationManager struct {
 	DryRun          bool
 	AutoUpgrade     bool
 	LoopBeforeRetry map[int32]struct{}
+	Config          *config.Config
 
 	rateLimitMu sync.Mutex
 	tokens      float64
@@ -42,14 +43,19 @@ func NewAutomationManager(database *db.DB, verbose bool, dryRun bool, autoUpgrad
 		return nil, fmt.Errorf("create scheduler: %w", err)
 	}
 
-	return &AutomationManager{
+	m := &AutomationManager{
 		DB:              database,
 		Verbose:         verbose,
 		scheduler:       s,
 		DryRun:          dryRun,
 		AutoUpgrade:     autoUpgrade,
 		LoopBeforeRetry: make(map[int32]struct{}),
-	}, nil
+	}
+
+	// Subscribe to config changes
+	config.Subscribe(m.handleConfigChange)
+
+	return m, nil
 }
 
 func (m *AutomationManager) Start(ctx context.Context) error {
@@ -517,4 +523,94 @@ func (m *AutomationManager) scheduleRetry(timeNeeded time.Duration) {
 		return
 	}
 	m.retryJob = job
+}
+
+// handleConfigChange is called when configuration changes
+func (m *AutomationManager) handleConfigChange(diff config.ConfigDiff) {
+	if m.Verbose {
+		log.Printf("\033[34m[CONFIG]\033[0m Configuration changed, applying updates...")
+	}
+
+	// Update internal state based on diff
+	if diff.DryRunChanged {
+		m.DryRun = diff.NewDryRun
+		if m.Verbose {
+			log.Printf("\033[34m[CONFIG]\033[0m DryRun changed from %v to %v", diff.OldDryRun, diff.NewDryRun)
+		}
+	}
+
+	if diff.AutoUpgradeChanged {
+		m.AutoUpgrade = diff.NewAutoUpgrade
+		if m.Verbose {
+			log.Printf("\033[34m[CONFIG]\033[0m AutoUpgrade changed from %v to %v", diff.OldAutoUpgrade, diff.NewAutoUpgrade)
+		}
+	}
+
+	// Update cron job schedule if it changed
+	if diff.ScheduleChanged {
+		m.updateCronSchedule(diff.NewSchedule)
+	}
+
+	// Reload config reference
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Printf("\033[31m✘\033[0m [CONFIG] Failed to reload config: %v", err)
+		return
+	}
+	m.Config = cfg
+
+	if m.Verbose {
+		log.Printf("\033[32m✔\033[0m [CONFIG] Configuration update complete")
+	}
+}
+
+// updateCronSchedule updates the cron job schedule
+func (m *AutomationManager) updateCronSchedule(newSchedule string) {
+	// Remove existing cron job if any
+	if m.cronJob != nil {
+		if err := m.scheduler.RemoveJob(m.cronJob.ID()); err != nil {
+			log.Printf("\033[31m✘\033[0m [AUTO] Failed to remove old cron job: %v", err)
+			return
+		}
+		m.cronJob = nil
+	}
+
+	// If new schedule is empty, automation is disabled
+	if newSchedule == "" {
+		log.Printf("\033[34m[AUTO]\033[0m Automation disabled (no schedule provided).")
+		return
+	}
+
+	// Create new cron job with updated schedule
+	job, err := m.scheduler.NewJob(
+		gocron.CronJob(newSchedule, false),
+		gocron.NewTask(func() {
+			m.runIncrementalScan()
+		}),
+		gocron.WithEventListeners(
+			gocron.BeforeJobRuns(func(jobID uuid.UUID, jobName string) {
+				if m.Verbose {
+					log.Printf("\033[34m[AUTO]\033[0m Starting scheduled incremental scan...")
+				}
+			}),
+			gocron.AfterJobRuns(func(jobID uuid.UUID, jobName string) {
+				if m.Verbose {
+					log.Printf("\033[34m[AUTO]\033[0m Scheduled incremental scan complete.")
+				}
+			}),
+		),
+	)
+	if err != nil {
+		log.Printf("\033[31m✘\033[0m [AUTO] Failed to create new cron job: %v", err)
+		return
+	}
+	m.cronJob = job
+
+	log.Printf("\033[32m✔\033[0m Automation schedule updated to: %s", newSchedule)
+	nextRun, err := m.cronJob.NextRun()
+	if err != nil {
+		log.Printf("\033[31m✘\033[0m [AUTO] Failed to get next run: %v", err)
+	} else {
+		log.Printf("\033[34m[AUTO]\033[0m Next scheduled run: %s", nextRun.Format(time.RFC3339))
+	}
 }
