@@ -1,6 +1,14 @@
 package web
 
-templ SettingsPage(username string, configContent string, scanRunning bool) {
+// BuildInfo holds build-time metadata displayed in the Settings page.
+type BuildInfo struct {
+	Version   string
+	Commit    string
+	GoVersion string
+	BuildTime string
+}
+
+templ SettingsPage(username string, configContent string, scanRunning bool, info BuildInfo) {
 	@Layout("Settings", username) {
 		<div class="space-y-8 animate-in fade-in duration-500">
 			<div>
@@ -52,11 +60,19 @@ templ SettingsPage(username string, configContent string, scanRunning bool) {
 							<div class="p-4 space-y-2">
 								<div class="flex justify-between text-xs">
 									<span class="opacity-50">Version</span>
-									<span class="font-mono font-bold">v1.0.0-beta</span>
+									<span class="font-mono font-bold">{ info.Version }</span>
+								</div>
+								<div class="flex justify-between text-xs">
+									<span class="opacity-50">Commit</span>
+									<span class="font-mono font-bold">{ info.Commit }</span>
 								</div>
 								<div class="flex justify-between text-xs">
 									<span class="opacity-50">Go Version</span>
-									<span class="font-mono font-bold">1.26.3</span>
+									<span class="font-mono font-bold">{ info.GoVersion }</span>
+								</div>
+								<div class="flex justify-between text-xs">
+									<span class="opacity-50">Built</span>
+									<span class="font-mono font-bold">{ info.BuildTime }</span>
 								</div>
 							</div>
 						</div>

@@ -8,8 +8,18 @@
 BINARY_NAME ?= reducarr
 BINARY_DIR ?= ./cmd/reducarr
 
+# Build info injected at link time
+GIT_TAG    := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+BUILD_PKG  := github.com/Ender-events/reducarr/internal/buildinfo
+
+BUILDINFO_FLAGS := -X $(BUILD_PKG).Version=$(GIT_TAG) \
+                   -X $(BUILD_PKG).Commit=$(GIT_COMMIT) \
+                   -X $(BUILD_PKG).BuildTime=$(BUILD_TIME)
+
 # Flags for static builds (no libc)
-STATIC_FLAGS := -ldflags="-s -w"
+STATIC_FLAGS := -ldflags="-s -w $(BUILDINFO_FLAGS)"
 
 # Default environment (can be overridden)
 GOOS ?= 
@@ -26,7 +36,7 @@ all: build
 
 # Classic build for local development (WITH libc)
 build: generate
-	go build -o $(BINARY_NAME) $(BINARY_DIR)
+	go build -ldflags="$(BUILDINFO_FLAGS)" -o $(BINARY_NAME) $(BINARY_DIR)
 
 # Static build (WITHOUT libc, portable)
 build-static: generate

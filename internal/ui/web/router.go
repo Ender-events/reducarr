@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Ender-events/reducarr/internal/buildinfo"
 	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/orchestrator"
@@ -176,7 +177,13 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Settings page")
 		content, _ := config.GetConfigContent()
-		SettingsPage(getUser(r), content, globalScanManager.IsRunning()).Render(r.Context(), w)
+		info := BuildInfo{
+			Version:   buildinfo.Version,
+			Commit:    buildinfo.Commit,
+			GoVersion: buildinfo.GoVersion(),
+			BuildTime: buildinfo.BuildTime,
+		}
+		SettingsPage(getUser(r), content, globalScanManager.IsRunning(), info).Render(r.Context(), w)
 	})
 
 	// Optimization Page
