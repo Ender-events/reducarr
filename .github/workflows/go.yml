@@ -9,11 +9,17 @@ on:
     pull_request:
         branches: ["main"]
 
+permissions:
+    contents: read
+    code-quality: write
+
 jobs:
     build:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
             - name: Set up Go
               uses: actions/setup-go@v4
@@ -23,5 +29,19 @@ jobs:
             - name: Build
               run: go generate ./... && go build -v ./...
 
-            - name: Test
-              run: go test -v ./...
+            - name: Test with coverage
+              run: go test -v -race -coverprofile=cover.out -covermode=atomic ./...
+
+            - name: Install gocover-cobertura
+              run: go install github.com/boumenot/gocover-cobertura@latest
+
+            - name: Convert coverage to Cobertura XML
+              run: gocover-cobertura < cover.out > coverage.xml
+
+            - name: Upload coverage report
+              if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+              uses: actions/upload-code-coverage@v1
+              with:
+                  file: coverage.xml
+                  language: Go
+                  label: code-coverage/go

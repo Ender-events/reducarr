@@ -6,13 +6,13 @@ import (
 
 // ConfigDiff represents the differences between old and new config
 type ConfigDiff struct {
-	DryRunChanged      bool
-	OldDryRun         bool
-	NewDryRun         bool
+	DryRunChanged bool
+	OldDryRun     bool
+	NewDryRun     bool
 
 	AutoUpgradeChanged bool
-	OldAutoUpgrade    bool
-	NewAutoUpgrade    bool
+	OldAutoUpgrade     bool
+	NewAutoUpgrade     bool
 
 	ScheduleChanged bool
 	OldSchedule     string
@@ -23,8 +23,8 @@ type ConfigDiff struct {
 	NewScoring     ScoringConfig
 
 	AutomationChanged bool
-	OldAutomation    AutomationConfig
-	NewAutomation    AutomationConfig
+	OldAutomation     AutomationConfig
+	NewAutomation     AutomationConfig
 }
 
 // HasChanges returns true if any configuration changed
