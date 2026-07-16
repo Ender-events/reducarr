@@ -27,6 +27,14 @@ type ScanManager struct {
 	isRunning bool
 }
 
+// HealthResult holds health check information for a single service.
+type HealthResult struct {
+	Name    string
+	Type    string
+	Healthy bool
+	Error   string
+}
+
 func (m *ScanManager) IsRunning() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -40,6 +48,7 @@ func (m *ScanManager) SetRunning(val bool) {
 }
 
 var globalScanManager = &ScanManager{}
+var startTime time.Time
 
 func getUser(r *http.Request) string {
 	u, _ := r.Context().Value(UserContextKey).(string)
@@ -47,6 +56,7 @@ func getUser(r *http.Request) string {
 }
 
 func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler {
+	startTime = time.Now()
 	mux := http.NewServeMux()
 
 	vlog := func(format string, v ...any) {
@@ -55,9 +65,15 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		}
 	}
 
-	// Health check
-	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+	// Health check - Simple liveness probe
+	mux.HandleFunc("GET /health/simple", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "OK")
+	})
+
+	// Health check - Detailed health information
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Detailed health check requested")
+		HealthCheckHandler(w, r, database, client)
 	})
 
 	// Login page
@@ -219,6 +235,32 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		}
 		vlog("Configuration saved successfully")
 		fmt.Fprintf(w, "<span class='text-success text-xs font-bold font-mono'>Saved at %s</span>", time.Now().Format("15:04:05"))
+	})
+
+	// Health Check API
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Getting health status")
+		if client == nil {
+			fmt.Fprint(w, "<span class='text-error text-xs'>Client not initialized</span>")
+			return
+		}
+		results := client.HealthCheck(r.Context())
+		// Convert to web.HealthResult for templ
+		webResults := make([]HealthResult, len(results))
+		for i, res := range results {
+			webResults[i] = HealthResult{
+				Name:    res.Name,
+				Type:    res.Type,
+				Healthy: res.Healthy,
+				Error: func() string {
+					if res.Error != nil {
+						return res.Error.Error()
+					}
+					return ""
+				}(),
+			}
+		}
+		HealthInfo(webResults).Render(r.Context(), w)
 	})
 
 	// Trigger Scan

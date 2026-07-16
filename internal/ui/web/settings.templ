@@ -77,6 +77,18 @@ templ SettingsPage(username string, configContent string, scanRunning bool, info
 							</div>
 						</div>
 					</div>
+					<div class="card bg-base-100 shadow border border-base-300 overflow-hidden">
+						<div class="card-body p-0 text-left">
+							<div class="p-4 bg-base-200/50 border-b border-base-300">
+								<h2 class="card-title text-xs font-black uppercase tracking-widest opacity-40">Service Health</h2>
+							</div>
+							<div class="p-4">
+								<div id="health-info" hx-get="/api/health" hx-trigger="load, health-refresh from:body">
+									<!-- Health info will be loaded via HTMX -->
+								</div>
+							</div>
+						</div>
+					</div>
 				</div>
 				<!-- Config Editor (Second on Mobile, Left Main Area on Desktop) -->
 				<div class="lg:col-span-2 space-y-4 lg:order-1">
@@ -132,6 +144,13 @@ templ SettingsPage(username string, configContent string, scanRunning bool, info
 				form.addEventListener('submit', function() {
 					hiddenInput.value = editor.getValue();
 				});
+
+				// Trigger health refresh after config save
+				document.body.addEventListener('htmx:afterRequest', function(evt) {
+					if (evt.detail.path === '/api/config' && evt.detail.successful) {
+						document.body.dispatchEvent(new CustomEvent('health-refresh'));
+					}
+				});
 			})();
 		</script>
 	}
@@ -162,6 +181,28 @@ templ ScanControls(isRunning bool) {
 			>
 				Start Incremental Scan
 			</button>
+		}
+	</div>
+}
+
+templ HealthInfo(results []HealthResult) {
+	<div class="space-y-2">
+		if len(results) == 0 {
+			<p class="text-xs text-base-content/50 italic">No services configured</p>
+		} else {
+			for _, res := range results {
+				<div class="flex items-center justify-between text-xs">
+					<div class="flex items-center gap-2">
+						<span class="opacity-70">{ res.Name }</span>
+						<span class="text-base-content/40">({ res.Type })</span>
+					</div>
+					if res.Healthy {
+						<div class="badge badge-success badge-soft text-xs">Connected</div>
+					} else {
+						<div class="badge badge-error badge-soft text-xs" title={ res.Error }>Failed</div>
+					}
+				</div>
+			}
 		}
 	</div>
 }
