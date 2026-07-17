@@ -48,16 +48,16 @@ func (e *Engine) Sort(releases []Release) {
 			return iApproved
 		}
 
-		ci := getScore(releases[i].Score)
-		cj := getScore(releases[j].Score)
-		if ci != cj {
-			return ci > cj
-		}
-
 		si := getRejectionSeverity(releases[i].Rejections)
 		sj := getRejectionSeverity(releases[j].Rejections)
 		if si != sj {
 			return si < sj
+		}
+
+		ci := getScore(releases[i].Score)
+		cj := getScore(releases[j].Score)
+		if ci != cj {
+			return ci > cj
 		}
 
 		return releases[i].Size < releases[j].Size
@@ -144,7 +144,7 @@ func getRejectionSeverity(rejections []string) int {
 
 	hasGeneral := false
 	for _, r := range rejections {
-		if strings.Contains(r, "Unknown Movie") {
+		if strings.Contains(r, "Unknown Movie") || strings.Contains(r, "Wrong episode") {
 			return 3 // Absolute worst
 		}
 		if !strings.Contains(r, "does not allow upgrades") {

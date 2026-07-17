@@ -56,11 +56,11 @@ func TestEngine_Sort(t *testing.T) {
 	// 1. Release C (Approved, score 10, size 500)
 	// 2. Release D (Approved, score 10, size 600)
 	// 3. Release B (Approved, score 5, size 800)
-	// 4. Release A (Severity 2 rejection, score 10, size 1000)
-	// 5. Release F (Severity 3 rejection, score 10, size 200)
-	// 6. Release E (Severity 1 rejection, score -5, size 300)
+	// 4. Release E (Severity 1 rejection, score -5, size 300)
+	// 5. Release A (Severity 2 rejection, score 10, size 1000)
+	// 6. Release F (Severity 3 rejection, score 10, size 200)
 
-	expectedOrder := []string{"Release C", "Release D", "Release B", "Release A", "Release F", "Release E"}
+	expectedOrder := []string{"Release C", "Release D", "Release B", "Release E", "Release A", "Release F"}
 	for i, r := range releases {
 		if r.Title != expectedOrder[i] {
 			t.Errorf("At index %d, expected %s, got %s", i, expectedOrder[i], r.Title)
