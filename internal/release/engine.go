@@ -37,8 +37,8 @@ func NewEngine(minSizeReduction string, minSeeders int32) *Engine {
 
 // Sort sorts releases in-place, prioritizing:
 // 1. No rejections first.
+// 2. Lower rejection severity.
 // 2. Higher Custom Format Score.
-// 3. Lower rejection severity.
 // 4. Smaller size (to achieve space reduction).
 func (e *Engine) Sort(releases []Release) {
 	sort.Slice(releases, func(i, j int) bool {
@@ -147,7 +147,7 @@ func getRejectionSeverity(rejections []string) int {
 		if strings.Contains(r, "Unknown Movie") || strings.Contains(r, "Wrong episode") {
 			return 3 // Absolute worst
 		}
-		if !strings.Contains(r, "does not allow upgrades") {
+		if !strings.Contains(r, "does not allow upgrades") && !strings.Contains(r, "equal or higher preference") {
 			hasGeneral = true
 		}
 	}
