@@ -122,9 +122,6 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 						if o.verbose {
 							fmt.Printf("  Removing torrent entry from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
 						}
-						if err := tInst.Api().LoginCtx(ctx); err != nil {
-							return report, o.failReport(report, fmt.Errorf("login to client %s: %w", t.ClientName, err))
-						}
 						if err := tInst.DeleteTorrent(ctx, t.InfoHash, false); err != nil {
 							return report, o.failReport(report, fmt.Errorf("delete torrent entry %s: %w", t.InfoHash, err))
 						}
@@ -147,9 +144,6 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 					} else {
 						if o.verbose {
 							fmt.Printf("  Removing torrent and files from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
-						}
-						if err := tInst.Api().LoginCtx(ctx); err != nil {
-							return report, o.failReport(report, fmt.Errorf("login to client %s: %w", t.ClientName, err))
 						}
 						if err := tInst.DeleteTorrent(ctx, t.InfoHash, true); err != nil {
 							return report, o.failReport(report, fmt.Errorf("delete torrent and files %s: %w", t.InfoHash, err))

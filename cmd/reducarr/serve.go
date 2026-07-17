@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/orchestrator"
 	"github.com/Ender-events/reducarr/internal/ui/web"
+	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,10 @@ var serveCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		defer database.Close()
+		client, err := arrs.GetClient(context.Background(), cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)
+		}
 
 		// 1. Try to load ANY user from DB first
 		user, pass, _ := database.GetFirstUser()
@@ -54,7 +60,6 @@ var serveCmd = &cobra.Command{
 			fmt.Printf("\033[32m✔\033[0m Web credentials for '%s' saved to database.\n", user)
 		}
 
-		client := getClient()
 		handler := web.NewRouter(database, client, verbose)
 
 		// Start background automation if scheduled

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"slices"
 
 	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/internal/db"
@@ -81,6 +80,11 @@ var scanCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		defer database.Close()
+		client, err := arrs.GetClient(context.Background(), cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)
+			os.Exit(1)
+		}
 
 		// Acquire scan lock
 		acquired, err := database.AcquireScanLock("global_scan", os.Getpid(), "cli", 3600)
@@ -95,46 +99,6 @@ var scanCmd = &cobra.Command{
 		defer func() {
 			_ = database.ReleaseScanLock("global_scan")
 		}()
-
-		// 3. Setup Client
-		var sonarrInstances []arrs.ArrInstance
-		for _, s := range cfg.Sonarr {
-			if len(targetInstances) > 0 && !slices.Contains(targetInstances, s.Name) {
-				continue
-			}
-			sonarrInstances = append(sonarrInstances, arrs.ArrInstance{
-				Name:         s.Name,
-				URL:          s.URL,
-				APIKey:       s.APIKey,
-				PathMappings: s.PathMappings,
-			})
-		}
-
-		var radarrInstances []arrs.ArrInstance
-		for _, r := range cfg.Radarr {
-			if len(targetInstances) > 0 && !slices.Contains(targetInstances, r.Name) {
-				continue
-			}
-			radarrInstances = append(radarrInstances, arrs.ArrInstance{
-				Name:         r.Name,
-				URL:          r.URL,
-				APIKey:       r.APIKey,
-				PathMappings: r.PathMappings,
-			})
-		}
-
-		qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
-		for i, q := range cfg.QBittorrent {
-			qbitConfigs[i] = arrs.QBitConfig{
-				Name:         q.Name,
-				URL:          q.URL,
-				Username:     q.Username,
-				Password:     q.Password,
-				PathMappings: q.PathMappings,
-			}
-		}
-
-		client := arrs.NewClient(sonarrInstances, radarrInstances, qbitConfigs)
 
 		uiLogger := ui.NewProgressLogger()
 

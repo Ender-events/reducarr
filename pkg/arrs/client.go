@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/pkg/fsutil"
 	"github.com/autobrr/go-qbittorrent"
 	"github.com/devopsarr/radarr-go/radarr"
@@ -370,10 +371,7 @@ func (c *Client) HealthCheck(ctx context.Context) []HealthResult {
 
 	// Check qBittorrent
 	for _, t := range c.Torrents {
-		err := t.Api().LoginCtx(ctx)
-		if err == nil {
-			_, err = t.Api().GetAppVersionCtx(ctx)
-		}
+		_, err := t.Api().GetAppVersionCtx(ctx)
 		results = append(results, HealthResult{
 			Name:    t.Name(),
 			Type:    "TorrentClient",
@@ -422,4 +420,37 @@ func GetBoolRadarr(n radarr.NullableBool) bool {
 		return false
 	}
 	return *n.Get()
+}
+
+func GetClient(ctx context.Context, cfg *config.Config) (*Client, error) {
+	sonarrInstances := make([]ArrInstance, len(cfg.Sonarr))
+	for i, s := range cfg.Sonarr {
+		sonarrInstances[i] = ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey, PathMappings: s.PathMappings}
+	}
+	radarrInstances := make([]ArrInstance, len(cfg.Radarr))
+	for i, r := range cfg.Radarr {
+		radarrInstances[i] = ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey, PathMappings: r.PathMappings}
+	}
+	qbitConfigs := make([]QBitConfig, len(cfg.QBittorrent))
+	for i, q := range cfg.QBittorrent {
+		qbitConfigs[i] = QBitConfig{
+			Name:         q.Name,
+			URL:          q.URL,
+			Username:     q.Username,
+			Password:     q.Password,
+			PathMappings: q.PathMappings,
+			ReadOnly:     q.ReadOnly,
+		}
+	}
+	c := NewClient(sonarrInstances, radarrInstances, qbitConfigs)
+
+	// Login to all qBittorrent instances
+	for _, t := range c.Torrents {
+		err := t.Api().LoginCtx(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return c, nil
 }

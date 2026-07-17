@@ -138,7 +138,11 @@ func (m *AutomationManager) runIncrementalScan() {
 	}()
 
 	// Initialize dependencies
-	client := m.getArrsClient(cfg)
+	client, err := arrs.GetClient(context.Background(), cfg)
+	if err != nil {
+		log.Printf("\033[31m✘\033[0m [AUTO] Failed to get client: %v", err)
+		return
+	}
 	scorer := m.getScorer(cfg)
 	uiLogger := ui.NewProgressLogger()
 
@@ -310,42 +314,6 @@ func (m *AutomationManager) processAutoUpgrades(ctx context.Context, cfg *config
 		}
 	}
 	clear(m.LoopBeforeRetry)
-}
-
-func (m *AutomationManager) getArrsClient(cfg *config.Config) *arrs.Client {
-	var sonarrInstances []arrs.ArrInstance
-	for _, s := range cfg.Sonarr {
-		sonarrInstances = append(sonarrInstances, arrs.ArrInstance{
-			Name:         s.Name,
-			URL:          s.URL,
-			APIKey:       s.APIKey,
-			PathMappings: s.PathMappings,
-		})
-	}
-
-	var radarrInstances []arrs.ArrInstance
-	for _, r := range cfg.Radarr {
-		radarrInstances = append(radarrInstances, arrs.ArrInstance{
-			Name:         r.Name,
-			URL:          r.URL,
-			APIKey:       r.APIKey,
-			PathMappings: r.PathMappings,
-		})
-	}
-
-	var qbitInstances []arrs.QBitConfig
-	for _, q := range cfg.QBittorrent {
-		qbitInstances = append(qbitInstances, arrs.QBitConfig{
-			Name:         q.Name,
-			URL:          q.URL,
-			Username:     q.Username,
-			Password:     q.Password,
-			PathMappings: q.PathMappings,
-			ReadOnly:     q.ReadOnly,
-		})
-	}
-
-	return arrs.NewClient(sonarrInstances, radarrInstances, qbitInstances)
 }
 
 func (m *AutomationManager) getScorer(cfg *config.Config) *scan.Scorer {

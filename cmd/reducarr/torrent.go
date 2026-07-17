@@ -28,6 +28,11 @@ var torrentScanCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		defer database.Close()
+		client, err := arrs.GetClient(context.Background(), cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)
+			os.Exit(1)
+		}
 
 		qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
 		mappings := make(map[string][]fsutil.PathMapping)
@@ -38,11 +43,11 @@ var torrentScanCmd = &cobra.Command{
 				Username:     q.Username,
 				Password:     q.Password,
 				PathMappings: q.PathMappings,
+				ReadOnly:     q.ReadOnly,
 			}
 			mappings[q.Name] = q.PathMappings
 		}
 
-		client := arrs.NewClient(nil, nil, qbitConfigs)
 		scanner := torrent.NewScanner(client, database, ui.NewProgressLogger(), mappings)
 		scanner.Verbose = verbose
 		if err := scanner.ScanAll(context.Background()); err != nil {

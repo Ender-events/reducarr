@@ -46,6 +46,11 @@ var candidatesCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		defer database.Close()
+		client, err := arrs.GetClient(context.Background(), cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)
+			os.Exit(1)
+		}
 
 		for {
 			candidates, err := database.GetCandidatesWithMedia()
@@ -181,14 +186,14 @@ var candidatesCmd = &cobra.Command{
 				return
 			}
 
-			orch := orchestrator.New(database, getClient(), dryRun, verbose)
+			orch := orchestrator.New(database, client, dryRun, verbose)
 
 			switch action {
 			case "Search for Alternatives":
 				if selected.ArrType == "radarr" {
-					searchForRadarrAlternatives(selected, database, orch)
+					searchForRadarrAlternatives(selected, database, orch, client)
 				} else {
-					searchForSonarrAlternatives(selected, database, orch)
+					searchForSonarrAlternatives(selected, database, orch, client)
 				}
 			case "Delete (No replacement)":
 				confirm := promptui.Prompt{
@@ -215,29 +220,6 @@ var candidatesCmd = &cobra.Command{
 			}
 		}
 	},
-}
-
-func getClient() *arrs.Client {
-	sonarrInstances := make([]arrs.ArrInstance, len(cfg.Sonarr))
-	for i, s := range cfg.Sonarr {
-		sonarrInstances[i] = arrs.ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey, PathMappings: s.PathMappings}
-	}
-	radarrInstances := make([]arrs.ArrInstance, len(cfg.Radarr))
-	for i, r := range cfg.Radarr {
-		radarrInstances[i] = arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey, PathMappings: r.PathMappings}
-	}
-	qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
-	for i, q := range cfg.QBittorrent {
-		qbitConfigs[i] = arrs.QBitConfig{
-			Name:         q.Name,
-			URL:          q.URL,
-			Username:     q.Username,
-			Password:     q.Password,
-			PathMappings: q.PathMappings,
-			ReadOnly:     q.ReadOnly,
-		}
-	}
-	return arrs.NewClient(sonarrInstances, radarrInstances, qbitConfigs)
 }
 
 func showTorrentContext(item displayItem, database *db.DB) {
@@ -374,8 +356,7 @@ func sortAndSelectRelease(releases []release.Release, item displayItem, database
 	return selected.Raw
 }
 
-func searchForRadarrAlternatives(item displayItem, database *db.DB, orch *orchestrator.Orchestrator) {
-	client := getClient()
+func searchForRadarrAlternatives(item displayItem, database *db.DB, orch *orchestrator.Orchestrator, client *arrs.Client) {
 	inst := client.FindRadarr(item.ArrInstance)
 	if inst == nil {
 		fmt.Printf("Error: could not find Radarr instance %s\n", item.ArrInstance)
@@ -443,8 +424,7 @@ func searchForRadarrAlternatives(item displayItem, database *db.DB, orch *orches
 	fmt.Println("\033[32m✔\033[0m Successfully triggered upgrade in Radarr.")
 }
 
-func searchForSonarrAlternatives(item displayItem, database *db.DB, orch *orchestrator.Orchestrator) {
-	client := getClient()
+func searchForSonarrAlternatives(item displayItem, database *db.DB, orch *orchestrator.Orchestrator, client *arrs.Client) {
 	inst := client.FindSonarr(item.ArrInstance)
 	if inst == nil {
 		fmt.Printf("Error: could not find Sonarr instance %s\n", item.ArrInstance)

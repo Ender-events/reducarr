@@ -513,62 +513,6 @@ func TestDeleteCandidate_WithTorrentsReadOnly(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "expected file to be manually deleted from disk")
 }
 
-func TestDeleteCandidate_WithTorrentsReadOnly_LoginError(t *testing.T) {
-	database := setupTestDB(t)
-	defer database.Close()
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hj, ok := w.(http.Hijacker)
-		if ok {
-			conn, _, _ := hj.Hijack()
-			conn.Close()
-			return
-		}
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer ts.Close()
-
-	client := createTestClient()
-	mockTorrent := NewMockTorrentInstance("test-torrent", true)
-	mockTorrent.apiClient = qbittorrent.NewClient(qbittorrent.Config{
-		Host:     ts.URL,
-		Username: "admin",
-		Password: "admin",
-	})
-	client.Torrents = append(client.Torrents, mockTorrent)
-
-	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
-	mockSonarr.deleteEpisodeFileFunc = func(ctx context.Context, fileId int32) error {
-		return nil
-	}
-	client.Sonarr = append(client.Sonarr, mockSonarr)
-
-	orch := New(database, client, false, false)
-
-	candidate := db.CandidateRecord{
-		MediaFileRecord: db.MediaFileRecord{
-			ArrInstance: "test-sonarr",
-			ArrType:     "sonarr",
-			ItemID:      123,
-			FileID:      456,
-			Path:        "/path/to/file.mkv",
-			Title:       "Test Episode",
-			Inode:       789,
-		},
-	}
-
-	err := database.UpsertMediaFile(candidate.MediaFileRecord)
-	require.NoError(t, err)
-
-	_, err = database.Exec("INSERT INTO torrents (client_name, info_hash, file_path, inode, is_seeding, added_at) VALUES (?, ?, ?, ?, ?, ?)",
-		"test-torrent", "cb1382490ec9ca81014e6b12a8497d337d1cfcb1", "/path/to/file.mkv", 789, 1, 1000)
-	require.NoError(t, err)
-
-	err = orch.DeleteCandidate(context.Background(), candidate)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "login to client test-torrent")
-}
-
 func TestDeleteCandidate_WithTorrentsReadOnly_DeleteError(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()

@@ -13,27 +13,12 @@ var healthCmd = &cobra.Command{
 	Use:   "health",
 	Short: "Check connectivity to Arrs and Torrent Client",
 	Run: func(cmd *cobra.Command, args []string) {
-		sonarrInstances := make([]arrs.ArrInstance, len(cfg.Sonarr))
-		for i, s := range cfg.Sonarr {
-			sonarrInstances[i] = arrs.ArrInstance{Name: s.Name, URL: s.URL, APIKey: s.APIKey}
+		client, err := arrs.GetClient(context.Background(), cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)
+			os.Exit(1)
 		}
 
-		radarrInstances := make([]arrs.ArrInstance, len(cfg.Radarr))
-		for i, r := range cfg.Radarr {
-			radarrInstances[i] = arrs.ArrInstance{Name: r.Name, URL: r.URL, APIKey: r.APIKey}
-		}
-
-		qbitConfigs := make([]arrs.QBitConfig, len(cfg.QBittorrent))
-		for i, q := range cfg.QBittorrent {
-			qbitConfigs[i] = arrs.QBitConfig{
-				Name:     q.Name,
-				URL:      q.URL,
-				Username: q.Username,
-				Password: q.Password,
-			}
-		}
-
-		client := arrs.NewClient(sonarrInstances, radarrInstances, qbitConfigs)
 		results := client.HealthCheck(context.Background())
 
 		hasError := false

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/orchestrator"
+	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/dustin/go-humanize"
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
@@ -25,6 +27,11 @@ var searchCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		defer database.Close()
+		client, err := arrs.GetClient(context.Background(), cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)
+			os.Exit(1)
+		}
 
 		query := strings.Join(args, " ")
 
@@ -162,11 +169,11 @@ var searchCmd = &cobra.Command{
 			}
 
 			// Perform action
-			orch := orchestrator.New(database, getClient(), dryRun, verbose)
+			orch := orchestrator.New(database, client, dryRun, verbose)
 			if selected.ArrType == "radarr" {
-				searchForRadarrAlternatives(selected.displayItem, database, orch)
+				searchForRadarrAlternatives(selected.displayItem, database, orch, client)
 			} else {
-				searchForSonarrAlternatives(selected.displayItem, database, orch)
+				searchForSonarrAlternatives(selected.displayItem, database, orch, client)
 			}
 		}
 	},
