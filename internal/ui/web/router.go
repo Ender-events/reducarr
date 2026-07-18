@@ -14,6 +14,7 @@ import (
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/orchestrator"
 	"github.com/Ender-events/reducarr/internal/scan"
+	"github.com/Ender-events/reducarr/internal/sorting"
 	"github.com/Ender-events/reducarr/internal/torrent"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
@@ -495,6 +496,8 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 				}
 			}
 		}
+
+		sorting.Sort(releaseInfos)
 
 		vlog("Found %d releases for %s", len(releaseInfos), target.Title)
 		ReleaseList(getUser(r), instance, id, releaseInfos).Render(r.Context(), w)

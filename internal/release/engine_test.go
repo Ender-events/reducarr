@@ -3,6 +3,8 @@ package release
 import (
 	"math"
 	"testing"
+
+	"github.com/Ender-events/reducarr/internal/sorting"
 )
 
 func TestEngine_Sort(t *testing.T) {
@@ -49,8 +51,7 @@ func TestEngine_Sort(t *testing.T) {
 		},
 	}
 
-	engine := NewEngine("10%", 0)
-	engine.Sort(releases)
+	sorting.Sort(releases)
 
 	// Expected order:
 	// 1. Release C (Approved, score 10, size 500)

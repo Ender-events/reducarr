@@ -13,6 +13,7 @@ import (
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/release"
 	"github.com/Ender-events/reducarr/internal/scan"
+	"github.com/Ender-events/reducarr/internal/sorting"
 	"github.com/Ender-events/reducarr/internal/torrent"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
@@ -292,7 +293,7 @@ func (m *AutomationManager) processAutoUpgrades(ctx context.Context, cfg *config
 			continue
 		}
 
-		engine.Sort(releases)
+		sorting.Sort(releases)
 		best := releases[0]
 		currentScore := int32(math.MinInt32)
 

@@ -10,6 +10,7 @@ import (
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/internal/orchestrator"
 	"github.com/Ender-events/reducarr/internal/release"
+	"github.com/Ender-events/reducarr/internal/sorting"
 	"github.com/Ender-events/reducarr/internal/ui"
 	"github.com/Ender-events/reducarr/pkg/arrs"
 	"github.com/devopsarr/radarr-go/radarr"
@@ -258,8 +259,7 @@ func sortAndSelectRelease(releases []release.Release, item displayItem, database
 	}
 
 	// 1. Sort using release engine
-	engine := release.NewEngine("", 0)
-	engine.Sort(releases)
+	sorting.Sort(releases)
 
 	// 2. Templates
 	templates := &promptui.SelectTemplates{

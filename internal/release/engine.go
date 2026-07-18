@@ -3,9 +3,10 @@ package release
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Ender-events/reducarr/internal/sorting"
 )
 
 // Release unifies Sonarr and Radarr release resources for scoring and sorting.
@@ -19,6 +20,17 @@ type Release struct {
 	Rejections []string
 	Score      *int32
 	Raw        any // Pointer to the original sonarr/radarr struct
+}
+
+// getters for sorting compatibility.
+func (r Release) GetRejections() []string {
+	return r.Rejections
+}
+func (r Release) GetScore() int32 {
+	return getScore(r.Score)
+}
+func (r Release) GetSize() int64 {
+	return r.Size
 }
 
 // Engine handles the sorting and automated selection of releases.
@@ -35,39 +47,10 @@ func NewEngine(minSizeReduction string, minSeeders int32) *Engine {
 	}
 }
 
-// Sort sorts releases in-place, prioritizing:
-// 1. No rejections first.
-// 2. Lower rejection severity.
-// 2. Higher Custom Format Score.
-// 4. Smaller size (to achieve space reduction).
-func (e *Engine) Sort(releases []Release) {
-	sort.Slice(releases, func(i, j int) bool {
-		iApproved := len(releases[i].Rejections) == 0
-		jApproved := len(releases[j].Rejections) == 0
-		if iApproved != jApproved {
-			return iApproved
-		}
-
-		si := getRejectionSeverity(releases[i].Rejections)
-		sj := getRejectionSeverity(releases[j].Rejections)
-		if si != sj {
-			return si < sj
-		}
-
-		ci := getScore(releases[i].Score)
-		cj := getScore(releases[j].Score)
-		if ci != cj {
-			return ci > cj
-		}
-
-		return releases[i].Size < releases[j].Size
-	})
-}
-
 // EvaluateUpgrade checks if the best candidate release qualifies as an upgrade over the current file.
 func (e *Engine) EvaluateUpgrade(best Release, currentSize int64, currentScore int32) (bool, string) {
 	// 1. Rejection check - absolute block for automated upgrade if has severity > 1
-	severity := getRejectionSeverity(best.Rejections)
+	severity := sorting.RejectionSeverity(best.Rejections)
 	if severity > 1 {
 		return false, fmt.Sprintf("release has severe rejection(s): %s", strings.Join(best.Rejections, ", "))
 	}
@@ -135,27 +118,6 @@ func getScore(s *int32) int32 {
 		return math.MinInt32
 	}
 	return *s
-}
-
-func getRejectionSeverity(rejections []string) int {
-	if len(rejections) == 0 {
-		return 0 // Approved
-	}
-
-	hasGeneral := false
-	for _, r := range rejections {
-		if strings.Contains(r, "Unknown Movie") || strings.Contains(r, "Wrong episode") {
-			return 3 // Absolute worst
-		}
-		if !strings.Contains(r, "does not allow upgrades") && !strings.Contains(r, "equal or higher preference") {
-			hasGeneral = true
-		}
-	}
-
-	if hasGeneral {
-		return 2
-	}
-	return 1
 }
 
 func parseBytes(s string) (int64, error) {

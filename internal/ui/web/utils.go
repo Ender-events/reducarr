@@ -34,3 +34,14 @@ type ReleaseInfo struct {
 	Score      int32
 	Rejections []string
 }
+
+// getters for sorting compatibility.
+func (r ReleaseInfo) GetRejections() []string {
+	return r.Rejections
+}
+func (r ReleaseInfo) GetScore() int32 {
+	return r.Score
+}
+func (r ReleaseInfo) GetSize() int64 {
+	return r.Size
+}
