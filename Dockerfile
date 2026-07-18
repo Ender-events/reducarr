@@ -1,6 +1,10 @@
 FROM golang:1.26-alpine AS build
 
-RUN apk add --no-cache git ca-certificates
+RUN apk add --no-cache \
+    ca-certificates \
+    git \
+    make \
+    && true
 RUN adduser -D -u 1000 reducarr
 
 WORKDIR /src
@@ -10,8 +14,7 @@ RUN go mod download
 
 COPY . .
 
-RUN go generate ./...
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /reducarr ./cmd/reducarr
+RUN make build-docker
 
 FROM scratch
 
@@ -21,7 +24,7 @@ COPY --from=build /etc/group /etc/group
 # Copy CA certificates for HTTPS requests
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-COPY --from=build /reducarr /reducarr
+COPY --from=build /src/reducarr /reducarr
 
 WORKDIR /data
 
