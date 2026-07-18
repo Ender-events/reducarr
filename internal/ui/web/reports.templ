@@ -2,6 +2,8 @@ package web
 
 import (
 	"fmt"
+	"strings"
+	
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/dustin/go-humanize"
 )
@@ -16,6 +18,8 @@ templ ReportItem(username string, r db.ReportRecord) {
 				<div class="md:hidden">
 					if r.Status == "SUCCESS" {
 						<div class="badge badge-success badge-soft badge-xs">Success</div>
+					} else if r.Status == "WARNING" {
+						<div class="badge badge-warning badge-soft badge-xs">Warning ({ len(r.WarningMessages) })</div>
 					} else {
 						<div class="badge badge-error badge-soft badge-xs">Failed</div>
 					}
@@ -41,6 +45,8 @@ templ ReportItem(username string, r db.ReportRecord) {
 			<div class="hidden md:flex items-center">
 				if r.Status == "SUCCESS" {
 					<div class="badge badge-success badge-soft badge-sm">Success</div>
+				} else if r.Status == "WARNING" {
+					<div class="badge badge-warning badge-soft badge-sm" title={ strings.Join(r.WarningMessages, ", ") }>Warning ({ len(r.WarningMessages) })</div>
 				} else {
 					<div class="badge badge-error badge-soft badge-sm" title={ r.ErrorMessage }>Failed</div>
 				}
@@ -50,7 +56,7 @@ templ ReportItem(username string, r db.ReportRecord) {
 			<div class="flex justify-between md:block items-center mt-2 md:mt-0">
 				<span class="md:hidden text-[10px] opacity-50 uppercase font-bold tracking-wider">Net Saved</span>
 				<div class="font-mono text-right text-sm font-bold">
-					if r.Status == "SUCCESS" {
+					if r.Status == "SUCCESS" || r.Status == "WARNING" {
 						if r.ActionType == "UPGRADE" && r.TotalSizeAfter > 0 {
 							<span class="text-success">+{ humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter)) }</span>
 						} else if r.ActionType == "DELETE" {

@@ -41,6 +41,8 @@ templ ReportDetailPage(username string, r db.ReportRecord) {
 									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest">Status</p>
 									if r.Status == "SUCCESS" {
 										<div class="badge badge-success font-bold">Success</div>
+									} else if r.Status == "WARNING" {
+										<div class="badge badge-warning font-bold">Warning</div>
 									} else {
 										<div class="badge badge-error font-bold">Failed</div>
 									}
@@ -51,6 +53,16 @@ templ ReportDetailPage(username string, r db.ReportRecord) {
 								<div class="mt-8 p-4 bg-error/10 border border-error/20 rounded-xl text-error">
 									<p class="text-[10px] uppercase font-black opacity-60 tracking-widest mb-2 text-left">Error Message</p>
 									<p class="text-sm font-medium">{ r.ErrorMessage }</p>
+								</div>
+							}
+							if len(r.WarningMessages) > 0 {
+								<div class="mt-8 p-4 bg-warning/10 border border-warning/20 rounded-xl text-warning">
+									<p class="text-[10px] uppercase font-black opacity-60 tracking-widest mb-2 text-left">Warning Messages</p>
+									<ul class="list-disc list-inside text-sm font-medium space-y-1">
+										for _, w := range r.WarningMessages {
+											<li>{ w }</li>
+										}
+									</ul>
 								</div>
 							}
 						</div>

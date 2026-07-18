@@ -84,6 +84,9 @@ var reportsCmd = &cobra.Command{
 				if r.Status == "FAILED" {
 					statusColor = "\033[31m" // Red
 				}
+				if r.Status == "WARNING" {
+					statusColor = "\033[33m" // Yellow
+				}
 
 				items[i] = displayReport{
 					ID:         r.ID,
@@ -103,8 +106,8 @@ var reportsCmd = &cobra.Command{
 
 			templates := &promptui.SelectTemplates{
 				Label:    "{{ . }}",
-				Active:   "\033[31m▶\033[0m {{ if .IsExit }}{{ .Title }}{{ else }}{{ .Date | faint }} | {{ .Action | yellow }} | {{ .Title | cyan }} ({{ .Saved | green }}){{ end }}",
-				Inactive: "  {{ if .IsExit }}{{ .Title }}{{ else }}{{ .Date | faint }} | {{ .Action | yellow }} | {{ .Title | cyan }} ({{ .Saved | green }}){{ end }}",
+				Active:   "\033[31m▶\033[0m {{ if .IsExit }}{{ .Title }}{{ else }}{{ .Date | faint }} | {{ .Action | yellow }} | {{ .Title | cyan }} | {{ .Status }}{{ if .Record.WarningMessages }} (\033[33m{{ len .Record.WarningMessages }} warnings\033[0m){{ end }} | {{ .Saved | green }}){{ end }}",
+				Inactive: "  {{ if .IsExit }}{{ .Title }}{{ else }}{{ .Date | faint }} | {{ .Action | yellow }} | {{ .Title | cyan }} | {{ .Status }}{{ if .Record.WarningMessages }} (\033[33m{{ len .Record.WarningMessages }} warnings\033[0m){{ end }} | {{ .Saved | green }}){{ end }}",
 				Selected: "\033[32m✔\033[0m {{ if .IsExit }}Exited{{ else }}Report: {{ .Title | cyan }} ({{ .Date | faint }}){{ end }}",
 				Details: `
 --------- Report Details ---------
@@ -189,6 +192,12 @@ func showFullReport(r db.ReportRecord) {
 	fmt.Printf("%-15s %s\n", "Status:", r.Status)
 	if r.ErrorMessage != "" {
 		fmt.Printf("%-15s \033[31m%s\033[0m\n", "Error:", r.ErrorMessage)
+	}
+	if len(r.WarningMessages) > 0 {
+		fmt.Printf("\n\033[1mWarnings:\033[0m\n")
+		for i, w := range r.WarningMessages {
+			fmt.Printf("  \033[33m%d. %s\033[0m\n", i+1, w)
+		}
 	}
 
 	fmt.Printf("\n\033[1mSpace Impact:\033[0m\n")

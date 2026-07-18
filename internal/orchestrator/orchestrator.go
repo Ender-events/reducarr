@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/pkg/arrs"
@@ -42,15 +43,24 @@ func (o *Orchestrator) DeleteCandidate(ctx context.Context, item db.CandidateRec
 	return nil
 }
 
+// addWarning adds a warning message to the report and sets status to WARNING if there are warnings
+func (o *Orchestrator) addWarning(report *db.ReportRecord, warning string) {
+	report.WarningMessages = append(report.WarningMessages, warning)
+	if report.Status == "SUCCESS" {
+		report.Status = "WARNING"
+	}
+}
+
 func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.CandidateRecord, actionType string) (db.ReportRecord, error) {
 	report := db.ReportRecord{
-		ActionType:   actionType,
-		ArrInstance:  item.ArrInstance,
-		ArrType:      item.ArrType,
-		ItemTitle:    item.Title,
-		MainFileID:   item.FileID,
-		MainFilePath: item.Path,
-		Status:       "SUCCESS",
+		ActionType:      actionType,
+		ArrInstance:     item.ArrInstance,
+		ArrType:         item.ArrType,
+		ItemTitle:       item.Title,
+		MainFileID:      item.FileID,
+		MainFilePath:    item.Path,
+		Status:          "SUCCESS",
+		WarningMessages: []string{},
 	}
 
 	// 1. Fetch associated torrents and ALL files they contain
@@ -132,7 +142,11 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 						for _, p := range filesToDelete {
 							if err := os.Remove(p); err != nil {
 								if !os.IsNotExist(err) {
-									fmt.Printf("\033[31m✘\033[0m Warning: failed to manually delete %s: %v\n", p, err)
+									warningMsg := fmt.Sprintf("failed to manually delete %s: %v", p, err)
+									o.addWarning(&report, warningMsg)
+									if o.verbose {
+										fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
+									}
 								}
 							}
 						}
@@ -153,7 +167,11 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 
 				if !o.dryRun {
 					if err := o.db.DeleteTorrentByHash(t.ClientName, t.InfoHash); err != nil {
-						fmt.Printf("\033[31m✘\033[0m Warning: failed to delete torrent %s from DB: %v\n", t.InfoHash, err)
+						warningMsg := fmt.Sprintf("failed to delete torrent %s from DB: %v", t.InfoHash[:8], err)
+						o.addWarning(&report, warningMsg)
+						if o.verbose {
+							fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
+						}
 					}
 				}
 			}
@@ -173,7 +191,11 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 				return report, o.failReport(report, fmt.Errorf("sonarr instance %s not found", item.ArrInstance))
 			}
 			if err := inst.DeleteEpisodeFile(ctx, item.FileID); err != nil {
-				return report, o.failReport(report, fmt.Errorf("delete sonarr episode file: %w", err))
+				if strings.Contains(err.Error(), "404 Not Found") {
+					o.addWarning(&report, fmt.Sprintf("sonarr episode file not found (already deleted?): %d", item.FileID))
+				} else {
+					return report, o.failReport(report, fmt.Errorf("delete sonarr episode file: %w", err))
+				}
 			}
 		} else {
 			inst := o.client.FindRadarr(item.ArrInstance)
@@ -181,7 +203,11 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 				return report, o.failReport(report, fmt.Errorf("radarr instance %s not found", item.ArrInstance))
 			}
 			if err := inst.DeleteMovieFile(ctx, item.FileID); err != nil {
-				return report, o.failReport(report, fmt.Errorf("delete radarr movie file: %w", err))
+				if strings.Contains(err.Error(), "404 Not Found") {
+					o.addWarning(&report, fmt.Sprintf("radarr movie file not found (already deleted?): %d", item.FileID))
+				} else {
+					return report, o.failReport(report, fmt.Errorf("delete radarr movie file: %w", err))
+				}
 			}
 		}
 	}
@@ -191,7 +217,11 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 		// Clean up all affected files from our DB
 		for _, m := range affectedFiles {
 			if err := o.db.DeleteMediaFile(m.ArrInstance, m.FileID); err != nil {
-				fmt.Printf("\033[31m✘\033[0m Warning: failed to delete file %d from DB: %v\n", m.FileID, err)
+				warningMsg := fmt.Sprintf("failed to delete file %d from DB: %v", m.FileID, err)
+				o.addWarning(&report, warningMsg)
+				if o.verbose {
+					fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
+				}
 			}
 		}
 	}

@@ -875,6 +875,52 @@ func TestDeleteCandidate_SonarrEpisodeFileError(t *testing.T) {
 	assert.Contains(t, err.Error(), "delete sonarr episode file")
 }
 
+func TestDeleteCandidate_Sonarr404Warning(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	notFoundErr := errors.New("404 Not Found: Episode file not found")
+	mockSonarr.deleteEpisodeFileFunc = func(ctx context.Context, fileId int32) error {
+		return notFoundErr
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+	orch := New(database, client, false, false)
+
+	candidate := db.CandidateRecord{
+		MediaFileRecord: db.MediaFileRecord{
+			ArrInstance: "test-sonarr",
+			ArrType:     "sonarr",
+			ItemID:      123,
+			FileID:      456,
+			Path:        "/path/to/file.mkv",
+			Title:       "Test Episode",
+			Inode:       789,
+			Size:        1000000000,
+		},
+		Reason:    "Test reason",
+		IsIgnored: false,
+	}
+
+	err := database.UpsertMediaFile(candidate.MediaFileRecord)
+	require.NoError(t, err)
+
+	err = orch.DeleteCandidate(context.Background(), candidate)
+	require.NoError(t, err)
+
+	allReports, err := database.GetReports(10, 0)
+	require.NoError(t, err)
+	require.Len(t, allReports, 1)
+
+	report := allReports[0]
+	assert.Equal(t, "WARNING", report.Status)
+	assert.Len(t, report.WarningMessages, 1)
+	assert.Contains(t, report.WarningMessages[0], "sonarr episode file not found (already deleted?)")
+	assert.Equal(t, int32(456), report.MainFileID)
+	assert.Equal(t, "Test Episode", report.ItemTitle)
+}
+
 func TestUpgradeCandidate_SonarrInstanceNotFound(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
