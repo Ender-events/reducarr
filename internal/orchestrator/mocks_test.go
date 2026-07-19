@@ -195,7 +195,6 @@ type MockTorrentInstance struct {
 	// Configurable function fields for testing
 	getFilesFunc      func(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error)
 	deleteTorrentFunc func(ctx context.Context, hash string, deleteFiles bool) error
-	loginFunc         func(ctx context.Context) error
 }
 
 // Name returns the instance name

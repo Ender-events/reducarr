@@ -24,7 +24,7 @@ var runCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		autoUpgradeVal := cfg.Automation.AutoUpgrade
 		if cmd.Flags().Changed("auto-upgrade") {

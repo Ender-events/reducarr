@@ -9,7 +9,6 @@ import (
 )
 
 type ProgressLogger struct {
-	lastLineLen int
 }
 
 func NewProgressLogger() *ProgressLogger {
@@ -28,13 +27,13 @@ func (p *ProgressLogger) UpdateTruncate(msg string) {
 
 	// \r returns to start of line, \033[K clears to end of current row
 	fmt.Printf("\r\033[K%s", msg)
-	os.Stdout.Sync()
+	_ = os.Stdout.Sync()
 }
 
 func (p *ProgressLogger) LogPermanent(msg string) {
 	// Clear the current line, print the permanent message with a newline
 	fmt.Printf("\r\033[K%s\n", msg)
-	os.Stdout.Sync()
+	_ = os.Stdout.Sync()
 }
 
 func (p *ProgressLogger) Done() {
@@ -63,7 +62,7 @@ func (s *Spinner) Start() {
 				return
 			default:
 				fmt.Printf("\r\033[K\033[36m%s\033[0m %s", frames[i], s.msg)
-				os.Stdout.Sync()
+				_ = os.Stdout.Sync()
 				i = (i + 1) % len(frames)
 				time.Sleep(100 * time.Millisecond)
 			}
@@ -74,5 +73,5 @@ func (s *Spinner) Start() {
 func (s *Spinner) Stop() {
 	s.done <- true
 	fmt.Print("\r\033[K") // Clear the spinner line
-	os.Stdout.Sync()
+	_ = os.Stdout.Sync()
 }

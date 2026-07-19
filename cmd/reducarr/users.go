@@ -25,7 +25,7 @@ var usersListCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		users, err := database.GetAllUsers()
 		if err != nil {
@@ -43,7 +43,9 @@ var usersListCmd = &cobra.Command{
 		for _, u := range users {
 			fmt.Fprintf(w, "%s\t%s\n", u.Username, u.UpdatedAt)
 		}
-		w.Flush()
+		if err := w.Flush(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error flushing output: %v\n", err)
+		}
 	},
 }
 
@@ -57,7 +59,7 @@ var usersAddCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		username := ""
 		if len(args) > 0 {
@@ -115,7 +117,7 @@ var usersDeleteCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		username := args[0]
 		if err := database.DeleteUser(username); err != nil {

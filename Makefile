@@ -22,8 +22,8 @@ BUILDINFO_FLAGS := -X $(BUILD_PKG).Version=$(GIT_TAG) \
 STATIC_FLAGS := -ldflags="-s -w $(BUILDINFO_FLAGS)"
 
 # Default environment (can be overridden)
-GOOS ?= 
-GOARCH ?= 
+GOOS ?=
+GOARCH ?=
 
 # =============================================================================
 # Main Targets
@@ -94,6 +94,9 @@ fmt:
 clean:
 	rm -f $(BINARY_NAME) $(BINARY_NAME)-* cover.out
 
+lint:
+	golangci-lint run
+
 install: generate
 	go install ./cmd/reducarr
 
@@ -116,11 +119,11 @@ build-%:
 	CGO_ENABLED=0 GOOS=$(word 1, $(subst -, ,$*)) GOARCH=$(word 2, $(subst -, ,$*)) \
 		go build $(STATIC_FLAGS) -o $(BINARY_NAME)-$* $(BINARY_DIR)
 
-build-linux-amd64: 
-build-linux-arm64: 
-build-windows-amd64: 
-build-darwin-amd64: 
-build-darwin-arm64: 
+build-linux-amd64:
+build-linux-arm64:
+build-windows-amd64:
+build-darwin-amd64:
+build-darwin-arm64:
 
 # =============================================================================
 # Help
@@ -147,6 +150,7 @@ help:
 	@echo "  fmt             - Format code"
 	@echo "  clean           - Clean build artifacts"
 	@echo "  install         - Install binary to GOPATH"
+	@echo "  lint            - Run linter"
 	@echo "  run             - Build and run the application"
 	@echo "  tidy            - Clean up go.mod and go.sum"
 	@echo "  version         - Show binary version"

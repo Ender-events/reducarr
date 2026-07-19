@@ -24,7 +24,7 @@ var inspectCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		var media *db.MediaFileRecord
 
@@ -135,7 +135,6 @@ var inspectCmd = &cobra.Command{
 					for _, tf := range allFiles {
 						// Check if this file is in media cache to check thresholds
 						m, err := database.GetMediaFileByInode(tf.Inode)
-						inodeStr := fmt.Sprintf("%d", tf.Inode)
 
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "  - inode %d: %v\n", tf.Inode, err)
@@ -151,6 +150,7 @@ var inspectCmd = &cobra.Command{
 							Duration: float64(m.Duration),
 						}
 						isCandidate, _ := scorer.IsCandidate(fInfo)
+						var inodeStr string
 						if isCandidate {
 							inodeStr = fmt.Sprintf("\033[31m%d\033[0m", tf.Inode)
 						} else {

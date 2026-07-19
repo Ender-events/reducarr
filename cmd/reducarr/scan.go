@@ -79,7 +79,7 @@ var scanCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 		client, err := arrs.GetClient(context.Background(), cfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)

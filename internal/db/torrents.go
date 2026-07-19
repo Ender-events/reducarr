@@ -17,7 +17,7 @@ func (d *DB) GetTorrentsByInode(inode uint64) ([]TorrentRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []TorrentRecord
 	for rows.Next() {
@@ -35,7 +35,7 @@ func (d *DB) GetTorrentsByPath(path string) ([]TorrentRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []TorrentRecord
 	for rows.Next() {
@@ -53,7 +53,7 @@ func (d *DB) GetTorrentsByHash(hash string) ([]TorrentRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []TorrentRecord
 	for rows.Next() {
@@ -71,7 +71,7 @@ func (d *DB) GetAllTorrents() ([]TorrentRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []TorrentRecord
 	for rows.Next() {

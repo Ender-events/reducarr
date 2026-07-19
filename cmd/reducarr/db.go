@@ -23,7 +23,7 @@ var dbStateCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		states, err := database.GetAllScanStates()
 		if err != nil {
@@ -41,7 +41,9 @@ var dbStateCmd = &cobra.Command{
 		for _, s := range states {
 			fmt.Fprintf(w, "%s\t%s\t%s\n", s.InstanceID, s.LastItemID, s.UpdatedAt)
 		}
-		w.Flush()
+		if err := w.Flush(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error flushing output: %v\n", err)
+		}
 	},
 }
 
@@ -54,7 +56,7 @@ var dbSummaryCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		tables := []string{"scan_state", "torrents", "media_files", "candidates", "reports"}
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
@@ -69,7 +71,9 @@ var dbSummaryCmd = &cobra.Command{
 				fmt.Fprintf(w, "%s\t%d\n", table, count)
 			}
 		}
-		w.Flush()
+		if err := w.Flush(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error flushing output: %v\n", err)
+		}
 	},
 }
 

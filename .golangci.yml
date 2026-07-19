@@ -1,0 +1,11 @@
+version: "2"
+linters:
+    exclusions:
+        paths:
+            - '_test\.go$'
+    settings:
+        errcheck:
+            exclude-functions:
+                - fmt.Fprintln
+                - fmt.Fprintf
+                - fmt.Fprint

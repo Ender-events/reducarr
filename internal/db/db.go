@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
 
 	_ "modernc.org/sqlite"
 )
@@ -27,6 +28,13 @@ func Open(path string) (*DB, error) {
 	}
 
 	return d, nil
+}
+
+func Close(d *DB) {
+	err := d.Close()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Close database: %v\n", err)
+	}
 }
 
 func (d *DB) migrate() error {
@@ -200,7 +208,7 @@ func (d *DB) GetAllScanStates() ([]ScanState, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var states []ScanState
 	for rows.Next() {

@@ -27,7 +27,7 @@ var torrentScanCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 		client, err := arrs.GetClient(context.Background(), cfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting client: %v\n", err)
@@ -67,7 +67,7 @@ var torrentListCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		records, err := database.GetAllTorrents()
 		if err != nil {
@@ -104,7 +104,7 @@ var torrentCheckCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		records, err := database.GetTorrentsByInode(inode)
 		if err != nil {

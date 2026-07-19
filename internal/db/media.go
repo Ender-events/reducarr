@@ -82,7 +82,7 @@ func (d *DB) GetCandidatesWithMedia() ([]CandidateRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []CandidateRecord
 	for rows.Next() {
@@ -106,7 +106,7 @@ func (d *DB) GetIgnoredCandidates() ([]CandidateRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []CandidateRecord
 	for rows.Next() {
@@ -200,7 +200,7 @@ func (d *DB) SearchMediaFiles(query string, limit int) ([]MediaFileRecord, error
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var records []MediaFileRecord
 	for rows.Next() {

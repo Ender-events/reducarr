@@ -38,7 +38,7 @@ var reportsCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		if clear {
 			confirm := promptui.Prompt{
@@ -234,7 +234,7 @@ func showFullReport(r db.ReportRecord) {
 	fmt.Printf("------------------------------------------\n")
 	fmt.Println("\033[2mPress enter to return...\033[0m")
 	var dummy string
-	fmt.Scanln(&dummy)
+	_, _ = fmt.Scanln(&dummy)
 }
 
 func init() {

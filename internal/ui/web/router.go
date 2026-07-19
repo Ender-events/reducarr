@@ -87,7 +87,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 				return
 			}
 		}
-		LoginPage("").Render(r.Context(), w)
+		if err := LoginPage("").Render(r.Context(), w); err != nil {
+			vlog("Failed to render login page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Login action
@@ -99,7 +102,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		ok, err := database.AuthenticateUser(user, pass)
 		if err != nil || !ok {
 			vlog("Failed login attempt for user: %s", user)
-			LoginPage("Invalid username or password").Render(r.Context(), w)
+			if err := LoginPage("Invalid username or password").Render(r.Context(), w); err != nil {
+				vlog("Failed to render login page: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -145,7 +151,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			FailedActions:     stats.FailedActions,
 			LastScanTime:      stats.LastScanTime,
 		}
-		IndexPage(getUser(r), webStats).Render(r.Context(), w)
+		if err := IndexPage(getUser(r), webStats).Render(r.Context(), w); err != nil {
+			vlog("Failed to render index page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Candidates
@@ -156,7 +165,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		CandidatesPage(getUser(r), candidates).Render(r.Context(), w)
+		if err := CandidatesPage(getUser(r), candidates).Render(r.Context(), w); err != nil {
+			vlog("Failed to render candidates page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Reports
@@ -167,7 +179,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		ReportsPage(getUser(r), reports).Render(r.Context(), w)
+		if err := ReportsPage(getUser(r), reports).Render(r.Context(), w); err != nil {
+			vlog("Failed to render reports page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("GET /reports/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -181,13 +196,19 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			return
 		}
 
-		ReportDetailPage(getUser(r), *report).Render(r.Context(), w)
+		if err := ReportDetailPage(getUser(r), *report).Render(r.Context(), w); err != nil {
+			vlog("Failed to render report detail page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Search
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Search page")
-		SearchPage(getUser(r)).Render(r.Context(), w)
+		if err := SearchPage(getUser(r)).Render(r.Context(), w); err != nil {
+			vlog("Failed to render search page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Settings
@@ -200,7 +221,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			GoVersion: buildinfo.GoVersion(),
 			BuildTime: buildinfo.BuildTime,
 		}
-		SettingsPage(getUser(r), content, globalScanManager.IsRunning(), info).Render(r.Context(), w)
+		if err := SettingsPage(getUser(r), content, globalScanManager.IsRunning(), info).Render(r.Context(), w); err != nil {
+			vlog("Failed to render settings page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Optimization Page
@@ -221,7 +245,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		torrents, _ := database.GetTorrentsByInode(media.Inode)
 
 		autoSearch := r.URL.Query().Get("search") == "1"
-		OptimizationPage(getUser(r), *media, torrents, autoSearch).Render(r.Context(), w)
+		if err := OptimizationPage(getUser(r), *media, torrents, autoSearch).Render(r.Context(), w); err != nil {
+			vlog("Failed to render optimization page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 	// --- API Endpoints for HTMX ---
 
@@ -261,7 +288,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 				}(),
 			}
 		}
-		HealthInfo(webResults).Render(r.Context(), w)
+		if err := HealthInfo(webResults).Render(r.Context(), w); err != nil {
+			vlog("Failed to render health info: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Trigger Scan
@@ -321,7 +351,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			vlog("Manual scan complete")
 		}()
 
-		ScanControls(true).Render(r.Context(), w)
+		if err := ScanControls(true).Render(r.Context(), w); err != nil {
+			vlog("Failed to render scan controls: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	}
 
 	mux.HandleFunc("POST /api/scan/full", func(w http.ResponseWriter, r *http.Request) {
@@ -344,13 +377,19 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		SearchResults(getUser(r), results).Render(r.Context(), w)
+		if err := SearchResults(getUser(r), results).Render(r.Context(), w); err != nil {
+			vlog("Failed to render search results: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Profile Modal
 	mux.HandleFunc("GET /api/user/password", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Opening profile modal")
-		ChangePasswordModal(getUser(r), "", false).Render(r.Context(), w)
+		if err := ChangePasswordModal(getUser(r), "", false).Render(r.Context(), w); err != nil {
+			vlog("Failed to render profile modal: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Change Password Action
@@ -360,21 +399,33 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		confirm := r.FormValue("confirm")
 
 		if pass != confirm {
-			ChangePasswordModal(getUser(r), "Passwords do not match.", false).Render(r.Context(), w)
+			if err := ChangePasswordModal(getUser(r), "Passwords do not match.", false).Render(r.Context(), w); err != nil {
+				vlog("Failed to render password mismatch modal: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
 			return
 		}
 
 		if len(pass) < 8 {
-			ChangePasswordModal(getUser(r), "Password must be at least 8 characters.", false).Render(r.Context(), w)
+			if err := ChangePasswordModal(getUser(r), "Password must be at least 8 characters.", false).Render(r.Context(), w); err != nil {
+				vlog("Failed to render password length modal: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
 			return
 		}
 
 		if err := database.UpsertUser(getUser(r), pass); err != nil {
-			ChangePasswordModal(getUser(r), "Failed to update password in database.", false).Render(r.Context(), w)
+			if err := ChangePasswordModal(getUser(r), "Failed to update password in database.", false).Render(r.Context(), w); err != nil {
+				vlog("Failed to render password update error modal: %v", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
 			return
 		}
 
-		ChangePasswordModal(getUser(r), "", true).Render(r.Context(), w)
+		if err := ChangePasswordModal(getUser(r), "", true).Render(r.Context(), w); err != nil {
+			vlog("Failed to render password update success modal: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Ignore Candidate
@@ -500,7 +551,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		sorting.Sort(releaseInfos)
 
 		vlog("Found %d releases for %s", len(releaseInfos), target.Title)
-		ReleaseList(getUser(r), instance, id, releaseInfos).Render(r.Context(), w)
+		if err := ReleaseList(getUser(r), instance, id, releaseInfos).Render(r.Context(), w); err != nil {
+			vlog("Failed to render release list: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Grab Release

@@ -20,7 +20,7 @@ var ignoredCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error opening database: %v\n", err)
 			os.Exit(1)
 		}
-		defer database.Close()
+		defer db.Close(database)
 
 		for {
 			ignored, err := database.GetIgnoredCandidates()
