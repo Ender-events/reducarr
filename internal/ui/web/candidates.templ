@@ -162,15 +162,25 @@ templ SearchModal(title string, instance string, id int32, releases []ReleaseInf
 	</dialog>
 }
 
-templ CandidatesPage(username string, candidates []db.CandidateRecord) {
-	@Layout("Candidates", username) {
+templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, instances []InstanceInfo) {
+	@Layout("Candidates", username, instances) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
-					<h1 class="text-2xl sm:text-3xl font-bold mb-1">Optimization Candidates</h1>
+					<h1 class="text-2xl sm:text-3xl font-bold mb-1">
+						Optimization Candidates
+						if activeInstance != "" {
+							<span class="text-base font-normal text-primary ml-2">({ activeInstance })</span>
+						}
+					</h1>
 					<p class="text-sm sm:text-base text-base-content/60">Identify and optimize oversized files in your library.</p>
 				</div>
-				<div class="badge badge-primary badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d items", len(candidates)) }</div>
+				<div class="flex items-center gap-2">
+					if activeInstance != "" {
+						<a href="/candidates" class="btn btn-xs btn-ghost text-error">Clear Filter</a>
+					}
+					<div class="badge badge-primary badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d items", len(candidates)) }</div>
+				</div>
 			</div>
 
 			<!-- Grid Container -->

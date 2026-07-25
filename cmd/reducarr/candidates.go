@@ -37,6 +37,8 @@ type displayItem struct {
 	IsExit       bool
 }
 
+var instanceFilter string
+
 var candidatesCmd = &cobra.Command{
 	Use:   "candidates",
 	Short: "Browse and manage optimization candidates interactively",
@@ -54,14 +56,18 @@ var candidatesCmd = &cobra.Command{
 		}
 
 		for {
-			candidates, err := database.GetCandidatesWithMedia()
+			candidates, err := database.GetCandidatesWithMediaFiltered(instanceFilter)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error fetching candidates: %v\n", err)
 				os.Exit(1)
 			}
 
 			if len(candidates) == 0 {
-				fmt.Println("No candidates found. Run 'reducarr scan' first.")
+				if instanceFilter != "" {
+					fmt.Printf("No candidates found for instance '%s'.\n", instanceFilter)
+				} else {
+					fmt.Println("No candidates found. Run 'reducarr scan' first.")
+				}
 				return
 			}
 
@@ -543,5 +549,18 @@ func isCandidate(fileID int32, instance string, database *db.DB) bool {
 
 func init() {
 	candidatesCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Do not perform any destructive actions (torrent deletion, release grab)")
+	candidatesCmd.Flags().StringVar(&instanceFilter, "instance", "", "Filter candidates by Sonarr or Radarr instance name")
+	_ = candidatesCmd.RegisterFlagCompletionFunc("instance", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		var names []string
+		if cfg != nil {
+			for _, s := range cfg.Sonarr {
+				names = append(names, s.Name)
+			}
+			for _, r := range cfg.Radarr {
+				names = append(names, r.Name)
+			}
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+	})
 	rootCmd.AddCommand(candidatesCmd)
 }

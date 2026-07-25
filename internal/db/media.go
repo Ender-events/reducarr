@@ -72,17 +72,31 @@ type CandidateRecord struct {
 }
 
 func (d *DB) GetCandidatesWithMedia() ([]CandidateRecord, error) {
-	rows, err := d.Query(`
+	return d.GetCandidatesWithMediaFiltered("")
+}
+
+func (d *DB) GetCandidatesWithMediaFiltered(instance string) ([]CandidateRecord, error) {
+	query := `
 		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored
 		FROM candidates c
 		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
 		WHERE c.is_ignored = 0
-		ORDER BY m.size DESC
-	`)
+	`
+	var args []any
+	if instance != "" {
+		query += " AND m.arr_instance = ?"
+		args = append(args, instance)
+	}
+	query += " ORDER BY m.size DESC"
+
+	rows, err := d.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
 
 	var records []CandidateRecord
 	for rows.Next() {

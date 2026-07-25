@@ -6,7 +6,7 @@ import (
 )
 
 templ ReportDetailPage(username string, r db.ReportRecord) {
-	@Layout("Report Detail", username) {
+	@Layout("Report Detail", username, nil) {
 		<div class="space-y-8 animate-in slide-in-from-bottom-4 duration-300">
 			<div class="flex items-center gap-4">
 				<a href="/reports" class="btn btn-ghost btn-sm btn-circle">

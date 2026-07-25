@@ -160,12 +160,14 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 	// Candidates
 	mux.HandleFunc("GET /candidates", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Candidates page")
-		candidates, err := database.GetCandidatesWithMedia()
+		instanceFilter := r.URL.Query().Get("instance")
+		candidates, err := database.GetCandidatesWithMediaFiltered(instanceFilter)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := CandidatesPage(getUser(r), candidates).Render(r.Context(), w); err != nil {
+		instances := buildInstanceInfos()
+		if err := CandidatesPage(getUser(r), candidates, instanceFilter, instances).Render(r.Context(), w); err != nil {
 			vlog("Failed to render candidates page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}

@@ -1,6 +1,8 @@
 package web
 
-templ Layout(title string, username string) {
+import "fmt"
+
+templ Layout(title string, username string, instances []InstanceInfo) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme="dark">
 		<head>
@@ -51,10 +53,34 @@ templ Layout(title string, username string) {
 								</a>
 							</li>
 							<li>
-								<a href="/candidates" class="flex items-center gap-3 py-3 rounded-lg hover:bg-base-200">
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-									Candidates
-								</a>
+								if len(instances) > 0 {
+									<details open>
+										<summary class="py-3 rounded-lg hover:bg-base-200">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+											Candidates
+										</summary>
+										<ul class="mt-1 space-y-1 pl-4">
+											<li>
+												<a href="/candidates" class="py-2 text-xs rounded-lg hover:bg-base-200">
+													All Instances
+												</a>
+											</li>
+											for _, inst := range instances {
+												<li>
+													<a href={ templ.SafeURL(fmt.Sprintf("/candidates?instance=%s", inst.Name)) } class="flex items-center justify-between py-2 text-xs rounded-lg hover:bg-base-200">
+														<span class="truncate">{ inst.Name }</span>
+														<span class="badge badge-ghost badge-xs uppercase font-bold text-[9px]">{ inst.ArrType }</span>
+													</a>
+												</li>
+											}
+										</ul>
+									</details>
+								} else {
+									<a href="/candidates" class="flex items-center gap-3 py-3 rounded-lg hover:bg-base-200">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 012 2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+										Candidates
+									</a>
+								}
 							</li>
 							<li>
 								<a href="/reports" class="flex items-center gap-3 py-3 rounded-lg hover:bg-base-200">

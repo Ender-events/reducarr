@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/Ender-events/reducarr/internal/config"
 )
 
 func safeID(instance string, id int32) string {
@@ -44,4 +46,24 @@ func (r ReleaseInfo) GetScore() int32 {
 }
 func (r ReleaseInfo) GetSize() int64 {
 	return r.Size
+}
+
+type InstanceInfo struct {
+	Name    string
+	ArrType string
+}
+
+func buildInstanceInfos() []InstanceInfo {
+	cfg, err := config.LoadConfig()
+	if err != nil || cfg == nil {
+		return nil
+	}
+	var out []InstanceInfo
+	for _, s := range cfg.Sonarr {
+		out = append(out, InstanceInfo{Name: s.Name, ArrType: "sonarr"})
+	}
+	for _, r := range cfg.Radarr {
+		out = append(out, InstanceInfo{Name: r.Name, ArrType: "radarr"})
+	}
+	return out
 }
