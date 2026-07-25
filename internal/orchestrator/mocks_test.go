@@ -93,6 +93,16 @@ func (m *MockSonarrInstance) ListHistory(ctx context.Context, pageSize int32) ([
 	return nil, nil
 }
 
+// LookupSeries searches series
+func (m *MockSonarrInstance) LookupSeries(ctx context.Context, term string) ([]sonarr.SeriesResource, error) {
+	return nil, nil
+}
+
+// GetSeriesByID gets series by id
+func (m *MockSonarrInstance) GetSeriesByID(ctx context.Context, id int32) (*sonarr.SeriesResource, error) {
+	return nil, nil
+}
+
 // MockRadarrInstance is a mock implementation of arrs.RadarrInstance for testing
 type MockRadarrInstance struct {
 	name         string

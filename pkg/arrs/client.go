@@ -48,6 +48,8 @@ type SonarrInstance interface {
 	ListEpisodes(ctx context.Context, seriesId int32) ([]sonarr.EpisodeResource, error)
 	DeleteEpisodeFile(ctx context.Context, fileId int32) error
 	ListHistory(ctx context.Context, pageSize int32) ([]sonarr.HistoryResource, error)
+	LookupSeries(ctx context.Context, term string) ([]sonarr.SeriesResource, error)
+	GetSeriesByID(ctx context.Context, id int32) (*sonarr.SeriesResource, error)
 }
 
 type RadarrInstance interface {
@@ -159,6 +161,22 @@ func (s *sonarrInst) ListHistory(ctx context.Context, pageSize int32) ([]sonarr.
 		return nil, err
 	}
 	return history.Records, nil
+}
+
+func (s *sonarrInst) LookupSeries(ctx context.Context, term string) ([]sonarr.SeriesResource, error) {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	series, _, err := s.api.SeriesLookupAPI.ListSeriesLookup(authCtx).Term(term).Execute()
+	return series, err
+}
+
+func (s *sonarrInst) GetSeriesByID(ctx context.Context, id int32) (*sonarr.SeriesResource, error) {
+	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+		"X-Api-Key": {Key: s.apiKey},
+	})
+	series, _, err := s.api.SeriesAPI.GetSeriesById(authCtx, id).Execute()
+	return series, err
 }
 
 type radarrInst struct {

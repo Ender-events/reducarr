@@ -94,3 +94,61 @@ func TestDB_GetCandidatesWithMediaFiltered(t *testing.T) {
 		assert.Len(t, allCandidates, 2)
 	})
 }
+
+func TestDB_GetMediaFilesBySeason(t *testing.T) {
+	d, err := Open(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = d.Close() }()
+
+	m1 := MediaFileRecord{
+		ArrInstance:  "Sonarr-1",
+		ArrType:      "sonarr",
+		ItemID:       10,
+		FileID:       101,
+		Path:         "/tv/Show/S01E01.mkv",
+		Title:        "Show",
+		Inode:        1001,
+		Size:         1000,
+		SeasonNumber: 1,
+	}
+	m2 := MediaFileRecord{
+		ArrInstance:  "Sonarr-1",
+		ArrType:      "sonarr",
+		ItemID:       10,
+		FileID:       102,
+		Path:         "/tv/Show/S01E02.mkv",
+		Title:        "Show",
+		Inode:        1002,
+		Size:         1000,
+		SeasonNumber: 1,
+	}
+	m3 := MediaFileRecord{
+		ArrInstance:  "Sonarr-1",
+		ArrType:      "sonarr",
+		ItemID:       10,
+		FileID:       201,
+		Path:         "/tv/Show/S02E01.mkv",
+		Title:        "Show",
+		Inode:        2001,
+		Size:         1000,
+		SeasonNumber: 2,
+	}
+
+	require.NoError(t, d.UpsertMediaFile(m1))
+	require.NoError(t, d.UpsertMediaFile(m2))
+	require.NoError(t, d.UpsertMediaFile(m3))
+
+	t.Run("returns files for existing season", func(t *testing.T) {
+		files, err := d.GetMediaFilesBySeason("Sonarr-1", 10, 1)
+		require.NoError(t, err)
+		require.Len(t, files, 2)
+		assert.Equal(t, int32(101), files[0].FileID)
+		assert.Equal(t, int32(102), files[1].FileID)
+	})
+
+	t.Run("returns empty for non-existent season", func(t *testing.T) {
+		files, err := d.GetMediaFilesBySeason("Sonarr-1", 10, 3)
+		require.NoError(t, err)
+		assert.Empty(t, files)
+	})
+}
