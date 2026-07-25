@@ -1277,3 +1277,132 @@ func TestDeleteCandidate_StandardTorrentDeleteError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "delete torrent and files")
 }
+
+func TestGrabSeasonRelease_Success(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+
+	var downloadCalled bool
+	var downloadedRelease *sonarr.ReleaseResource
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, r *sonarr.ReleaseResource) error {
+		downloadCalled = true
+		downloadedRelease = r
+		return nil
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+
+	orch := New(database, client, false, false)
+
+	release := &sonarr.ReleaseResource{}
+	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	require.NoError(t, err)
+	assert.True(t, downloadCalled)
+	assert.Equal(t, release, downloadedRelease)
+
+	reports, err := database.GetReports(10, 0)
+	require.NoError(t, err)
+	require.Len(t, reports, 1)
+	assert.Equal(t, "SEASON_GRAB", reports[0].ActionType)
+	assert.Equal(t, "SUCCESS", reports[0].Status)
+	assert.Equal(t, "My Show", reports[0].ItemTitle)
+}
+
+func TestGrabSeasonRelease_InstanceNotFound(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	orch := New(database, client, false, false)
+
+	release := &sonarr.ReleaseResource{}
+	err := orch.GrabSeasonRelease(context.Background(), "missing-sonarr", "My Show", release)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sonarr instance missing-sonarr not found")
+}
+
+func TestGrabSeasonRelease_DownloadError(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, r *sonarr.ReleaseResource) error {
+		return errors.New("network failure")
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+
+	orch := New(database, client, false, false)
+
+	release := &sonarr.ReleaseResource{}
+	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "grab sonarr season release")
+}
+
+func TestGrabSeasonRelease_DryRun(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	var downloadCalled bool
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, r *sonarr.ReleaseResource) error {
+		downloadCalled = true
+		return nil
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+
+	orch := New(database, client, true, false) // dryRun = true
+
+	release := &sonarr.ReleaseResource{}
+	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	require.NoError(t, err)
+	assert.False(t, downloadCalled, "DownloadRelease must not be called in dry-run mode")
+
+	reports, err := database.GetReports(10, 0)
+	require.NoError(t, err)
+	assert.Empty(t, reports)
+}
+
+func TestGrabSeasonRelease_WithSize(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, r *sonarr.ReleaseResource) error {
+		return nil
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+	orch := New(database, client, false, false)
+
+	size := int64(5_000_000_000)
+	release := &sonarr.ReleaseResource{Size: &size}
+	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	require.NoError(t, err)
+
+	reports, err := database.GetReports(10, 0)
+	require.NoError(t, err)
+	require.Len(t, reports, 1)
+	assert.Equal(t, size, reports[0].TotalSizeAfter)
+}
+
+func TestGrabSeasonRelease_Verbose(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, r *sonarr.ReleaseResource) error {
+		return nil
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+	orch := New(database, client, false, true) // verbose = true
+
+	release := &sonarr.ReleaseResource{}
+	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	require.NoError(t, err)
+}

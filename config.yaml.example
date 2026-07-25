@@ -2,7 +2,7 @@
 dryRun: false
 
 sonarr:
-  - name: "Local Sonarr"
+  - name: "Sonarr-HD"
     url: "http://localhost:8989"
     apiKey: "YOUR_SONARR_API_KEY"
     pathMappings:
@@ -10,7 +10,7 @@ sonarr:
         local: "/mnt/media"
 
 radarr:
-  - name: "Local Radarr"
+  - name: "Radarr-HD"
     url: "http://localhost:7878"
     apiKey: "YOUR_RADARR_API_KEY"
     pathMappings:

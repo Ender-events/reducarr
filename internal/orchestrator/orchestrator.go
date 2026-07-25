@@ -296,3 +296,43 @@ func (o *Orchestrator) UpgradeCandidate(ctx context.Context, item db.CandidateRe
 	_ = o.db.InsertReport(report)
 	return nil
 }
+
+// GrabSeasonRelease triggers a grab for a season-scoped Sonarr release.
+// It does not delete existing episode files; Sonarr handles replacement on import.
+func (o *Orchestrator) GrabSeasonRelease(ctx context.Context, instance, seriesTitle string, release *sonarr.ReleaseResource) error {
+	if o.dryRun {
+		fmt.Printf("  [DRY-RUN] Would grab season release: %s\n", arrs.GetString(release.Title))
+		return nil
+	}
+
+	inst := o.client.FindSonarr(instance)
+	if inst == nil {
+		return fmt.Errorf("sonarr instance %s not found", instance)
+	}
+
+	if o.verbose {
+		fmt.Printf("Grabbing season release: %s...\n", arrs.GetString(release.Title))
+	}
+
+	return fmt.Errorf("Not Ready yet")
+	if err := inst.DownloadRelease(ctx, release); err != nil {
+		return fmt.Errorf("grab sonarr season release: %w", err)
+	}
+
+	report := db.ReportRecord{
+		ActionType:      "SEASON_GRAB",
+		ArrInstance:     instance,
+		ArrType:         "sonarr",
+		ItemTitle:       seriesTitle,
+		NewReleaseTitle: arrs.GetString(release.Title),
+		NewIndexer:      arrs.GetString(release.Indexer),
+		Status:          "SUCCESS",
+		WarningMessages: []string{},
+	}
+	if release.Size != nil {
+		report.TotalSizeAfter = *release.Size
+	}
+	_ = o.db.InsertReport(report)
+
+	return nil
+}

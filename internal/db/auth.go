@@ -74,11 +74,11 @@ func (d *DB) UpsertUser(username, password string) error {
 func (d *DB) AuthenticateUser(username, password string) (bool, error) {
 	var hashed string
 	err := d.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&hashed)
-	if err == sql.ErrNoRows {
-		return false, nil
-	}
 	if err != nil {
 		return false, err
+	}
+	if err == sql.ErrNoRows {
+		return false, nil
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(hashed), []byte(password))

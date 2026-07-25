@@ -3,6 +3,8 @@ package web
 import (
 	"fmt"
 	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/Ender-events/reducarr/pkg/arrs"
+	"github.com/devopsarr/sonarr-go/sonarr"
 	"github.com/dustin/go-humanize"
 )
 
@@ -36,7 +38,7 @@ templ SearchResults(username string, results []db.MediaFileRecord) {
 							</div>
 
 							<div class="flex flex-col min-w-0">
-								<a href={ templ.SafeURL(fmt.Sprintf("/optimize/%s/%d", r.ArrInstance, r.FileID)) } class="font-bold truncate text-sm sm:text-base group-hover:text-primary transition-colors">
+								<a href={ templ.SafeURL(fmt.Sprintf("/optimize/files/%s/%d", r.ArrInstance, r.FileID)) } class="font-bold truncate text-sm sm:text-base group-hover:text-primary transition-colors">
 									if r.ArrType == "sonarr" {
 										{ fmt.Sprintf("%s - %s", r.Title, extractSXXEXX(r.Path)) }
 									} else {
@@ -56,7 +58,7 @@ templ SearchResults(username string, results []db.MediaFileRecord) {
 
 							<div class="card-actions justify-end mt-4 md:mt-0">
 								<a
-									href={ templ.SafeURL(fmt.Sprintf("/optimize/%s/%d?search=1", r.ArrInstance, r.FileID)) }
+									href={ templ.SafeURL(fmt.Sprintf("/optimize/files/%s/%d?search=1", r.ArrInstance, r.FileID)) }
 									class="btn btn-sm btn-primary w-full md:w-auto md:btn-ghost font-bold"
 								>
 									Optimize
@@ -70,32 +72,100 @@ templ SearchResults(username string, results []db.MediaFileRecord) {
 	</div>
 }
 
+templ ShowSearchResults(username string, instanceName string, shows []sonarr.SeriesResource) {
+	<div class="animate-in fade-in slide-in-from-top-2 duration-500">
+		if len(shows) == 0 {
+			<div class="card bg-base-100 border border-base-300 shadow-sm py-20">
+				<div class="text-center opacity-50 italic">No series found in Sonarr matching your query.</div>
+			</div>
+		} else {
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+				for _, s := range shows {
+					if s.Id != nil && *s.Id > 0 {
+						<div class="card bg-base-100 border border-base-300 shadow-sm hover:border-primary/50 transition-all p-5 flex flex-col justify-between">
+							<div class="space-y-3">
+								<div class="flex items-start justify-between gap-2">
+									<div>
+										<h3 class="font-bold text-lg leading-snug hover:text-primary transition-colors">
+											<a href={ templ.SafeURL(fmt.Sprintf("/shows/%s/%d", instanceName, *s.Id)) }>
+												{ arrs.GetString(s.Title) }
+											</a>
+										</h3>
+										if s.Year != nil && *s.Year > 0 {
+											<span class="text-xs opacity-50 font-semibold">{ fmt.Sprintf("%d", *s.Year) }</span>
+										}
+									</div>
+									<span class="badge badge-primary badge-sm font-bold uppercase text-[10px] whitespace-nowrap">{ instanceName }</span>
+								</div>
+								if s.Overview.Get() != nil && *s.Overview.Get() != "" {
+									<p class="text-xs text-base-content/70 line-clamp-3 leading-relaxed">{ *s.Overview.Get() }</p>
+								}
+							</div>
+
+							<div class="flex items-center justify-between border-t border-base-300/60 pt-4 mt-4">
+								<div class="text-xs opacity-60 font-medium">
+									{ fmt.Sprintf("%d seasons", len(s.Seasons)) }
+								</div>
+								<a
+									href={ templ.SafeURL(fmt.Sprintf("/shows/%s/%d", instanceName, *s.Id)) }
+									class="btn btn-sm btn-primary font-bold"
+								>
+									View Series & Seasons
+								</a>
+							</div>
+						</div>
+					}
+				}
+			</div>
+		}
+	</div>
+}
+
 templ SearchPage(username string) {
-	@Layout("Search", username, nil) {
+	@Layout("Search", username, buildInstanceInfos()) {
 		<div class="space-y-6">
 			<div>
 				<h1 class="text-3xl font-bold mb-1 tracking-tight text-left">Search Library</h1>
-				<p class="text-sm sm:text-base text-base-content/60 font-medium text-left">Manual lookup in your media collection.</p>
+				<p class="text-sm sm:text-base text-base-content/60 font-medium text-left">Lookup files in your local database or browse series on Sonarr.</p>
 			</div>
 
 			<div class="flex flex-col gap-6">
-				<div class="form-control">
-					<div class="input input-bordered flex items-center gap-3 h-14 shadow-sm bg-base-100 focus-within:ring-2 focus-within:ring-primary/20 transition-all border-base-300">
-						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-5 h-5 opacity-30"><path fill-rule="evenodd" d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z" clip-rule="evenodd" /></svg>
-						<input
-							type="text"
-							name="q"
-							class="grow font-medium placeholder:font-normal placeholder:opacity-50"
-							placeholder="Type a movie or show name..."
-							hx-get="/api/search"
-							hx-trigger="keyup changed delay:400ms, search"
-							hx-target="#search-results"
-							hx-indicator="#search-spinner"
-							autofocus
-						/>
-						<span id="search-spinner" class="loading loading-spinner loading-md htmx-indicator text-primary"></span>
-					</div>
+				<!-- Search Mode Tabs -->
+				<div class="flex items-center gap-2 border-b border-base-300 pb-2">
+					<button
+						id="tab-files"
+						class="btn btn-sm btn-primary"
+						onclick="switchSearchMode('files')"
+					>
+						Files
+					</button>
+					<button
+						id="tab-shows"
+						class="btn btn-sm btn-ghost"
+						onclick="switchSearchMode('shows')"
+					>
+						Shows
+					</button>
 				</div>
+
+				<form id="search-form" action="/api/search" method="GET" hx-get="/api/search" hx-target="#search-results" hx-indicator="#search-spinner">
+					<input type="hidden" id="search-mode-input" name="mode" value="files" />
+					<div class="form-control">
+						<div class="input input-bordered flex items-center gap-3 h-14 shadow-sm bg-base-100 focus-within:ring-2 focus-within:ring-primary/20 transition-all border-base-300">
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-5 h-5 opacity-30"><path fill-rule="evenodd" d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z" clip-rule="evenodd" /></svg>
+							<input
+								id="search-query-input"
+								type="text"
+								name="q"
+								class="grow font-medium placeholder:font-normal placeholder:opacity-50"
+								placeholder="Type a movie or show name..."
+								hx-trigger="keyup changed delay:400ms, search"
+								autofocus
+							/>
+							<span id="search-spinner" class="loading loading-spinner loading-md htmx-indicator text-primary"></span>
+						</div>
+					</div>
+				</form>
 
 				<div id="search-results">
 					<div class="text-center py-32 opacity-30">
@@ -109,5 +179,33 @@ templ SearchPage(username string) {
 				</div>
 			</div>
 		</div>
+
+		<script>
+			function switchSearchMode(mode) {
+				const modeInput = document.getElementById('search-mode-input');
+				const form = document.getElementById('search-form');
+				const queryInput = document.getElementById('search-query-input');
+				const tabFiles = document.getElementById('tab-files');
+				const tabShows = document.getElementById('tab-shows');
+
+				modeInput.value = mode;
+				if (mode === 'shows') {
+					tabShows.className = 'btn btn-sm btn-primary';
+					tabFiles.className = 'btn btn-sm btn-ghost';
+					form.setAttribute('hx-get', '/api/search/shows');
+					queryInput.placeholder = 'Search series in Sonarr...';
+				} else {
+					tabFiles.className = 'btn btn-sm btn-primary';
+					tabShows.className = 'btn btn-sm btn-ghost';
+					form.setAttribute('hx-get', '/api/search');
+					queryInput.placeholder = 'Type a movie or show name...';
+				}
+
+				htmx.process(form);
+				if (queryInput.value.length >= 2) {
+					htmx.trigger(queryInput, 'search');
+				}
+			}
+		</script>
 	}
 }

@@ -1,0 +1,140 @@
+package web
+
+import (
+	"fmt"
+	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/Ender-events/reducarr/pkg/arrs"
+	"github.com/devopsarr/sonarr-go/sonarr"
+	"github.com/dustin/go-humanize"
+)
+
+templ SeriesPage(username string, instanceName string, series *sonarr.SeriesResource, seasonFiles map[int32][]db.MediaFileRecord) {
+	@Layout(fmt.Sprintf("%s - Shows", arrs.GetString(series.Title)), username, nil) {
+		<div class="space-y-6">
+			<!-- Breadcrumb & Header -->
+			<div class="flex flex-col gap-2">
+				<div class="text-xs breadcrumbs opacity-60">
+					<ul>
+						<li><a href="/" class="hover:text-primary">Home</a></li>
+						<li><a href="/search" class="hover:text-primary">Search</a></li>
+						<li class="font-bold text-primary">{ arrs.GetString(series.Title) }</li>
+					</ul>
+				</div>
+				<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-base-100 border border-base-300 p-6 rounded-2xl shadow-sm">
+					<div class="space-y-2">
+						<div class="flex items-center gap-2">
+							<span class="badge badge-primary font-bold uppercase text-[10px]">{ instanceName }</span>
+							if series.Year != nil && *series.Year > 0 {
+								<span class="badge badge-ghost text-[10px] font-semibold">{ fmt.Sprintf("%d", *series.Year) }</span>
+							}
+						</div>
+						<h1 class="text-3xl font-black tracking-tight">{ arrs.GetString(series.Title) }</h1>
+						if series.Overview.Get() != nil && *series.Overview.Get() != "" {
+							<p class="text-sm text-base-content/70 max-w-3xl line-clamp-3">{ *series.Overview.Get() }</p>
+						}
+					</div>
+					<div class="flex items-center gap-4 border-t sm:border-t-0 sm:border-l border-base-300 pt-4 sm:pt-0 sm:pl-6">
+						<div class="text-center">
+							<div class="text-2xl font-black text-primary">{ fmt.Sprintf("%d", len(series.Seasons)) }</div>
+							<div class="text-[10px] uppercase font-bold opacity-50">Seasons</div>
+						</div>
+						<div class="text-center">
+							<div class="text-2xl font-black text-success">{ fmt.Sprintf("%d", totalSeriesFiles(seasonFiles)) }</div>
+							<div class="text-[10px] uppercase font-bold opacity-50">Files in DB</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Seasons Accordions -->
+			<div class="space-y-4">
+				<h2 class="text-xl font-bold tracking-tight">Seasons & Episodes</h2>
+
+				if len(series.Seasons) == 0 {
+					<div class="card bg-base-100 border border-base-300 p-8 text-center opacity-50 italic">
+						No seasons found for this series.
+					</div>
+				} else {
+					for _, season := range series.Seasons {
+						{{ seasonNum := season.GetSeasonNumber() }}
+						{{ files := seasonFiles[seasonNum] }}
+						<div class="collapse collapse-arrow bg-base-100 border border-base-300 shadow-sm rounded-xl">
+							<input type="checkbox" checked?={ len(files) > 0 }/>
+							<div class="collapse-title text-base sm:text-lg font-bold flex items-center justify-between pr-10">
+								<div class="flex items-center gap-3">
+									if seasonNum == 0 {
+										<span class="badge badge-warning font-bold">Specials (S00)</span>
+									} else {
+										<span class="badge badge-primary font-bold">{ fmt.Sprintf("Season %02d", seasonNum) }</span>
+									}
+									<span class="text-xs sm:text-sm font-normal opacity-60">
+										{ fmt.Sprintf("%d episode files in DB", len(files)) }
+									</span>
+								</div>
+							</div>
+							<div class="collapse-content space-y-3 pt-2">
+								if len(files) == 0 {
+									<div class="p-6 text-center text-sm opacity-50 italic bg-base-200/40 rounded-xl border border-dashed border-base-300">
+										No files found in DB for this season (run a scan to populate).
+									</div>
+								} else {
+									if seasonNum != 0 {
+										<div class="flex items-center justify-between bg-base-200/80 border border-base-300/60 rounded-lg px-4 py-2">
+											<span class="text-xs opacity-60 font-mono">{ humanize.Bytes(uint64(sumFilesSize(files))) } total</span>
+											<a
+												href={ templ.SafeURL(fmt.Sprintf("/optimize/shows/%s/%d/%d?search=1", instanceName, series.GetId(), seasonNum)) }
+												class="btn btn-xs sm:btn-sm btn-primary font-bold"
+											>
+												Optimize season
+											</a>
+										</div>
+									}
+									<div class="grid grid-cols-1 gap-3">
+										for _, r := range files {
+											<div class="card bg-base-200/50 hover:bg-base-200 border border-base-300/80 p-4 transition-colors">
+												<div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+													<div class="flex flex-col min-w-0">
+														<a href={ templ.SafeURL(fmt.Sprintf("/optimize/files/%s/%d", r.ArrInstance, r.FileID)) } class="font-bold text-sm sm:text-base hover:text-primary transition-colors truncate">
+															{ r.Title } - { extractSXXEXX(r.Path) }
+														</a>
+														<span class="text-[10px] sm:text-xs opacity-50 truncate font-mono" title={ r.Path }>{ r.Path }</span>
+													</div>
+													<div class="flex items-center gap-3 justify-between md:justify-end border-t md:border-t-0 border-base-300/50 pt-2 md:pt-0">
+														<div class="badge badge-ghost badge-sm whitespace-nowrap">{ r.Quality }</div>
+														<div class="font-mono text-success text-xs font-bold whitespace-nowrap">{ humanize.Bytes(uint64(r.Size)) }</div>
+														<a
+															href={ templ.SafeURL(fmt.Sprintf("/optimize/files/%s/%d?search=1", r.ArrInstance, r.FileID)) }
+															class="btn btn-xs sm:btn-sm btn-primary font-bold"
+														>
+															Optimize
+														</a>
+													</div>
+												</div>
+											</div>
+										}
+									</div>
+								}
+							</div>
+						</div>
+					}
+				}
+			</div>
+		</div>
+	}
+}
+
+func totalSeriesFiles(seasonFiles map[int32][]db.MediaFileRecord) int {
+	total := 0
+	for _, files := range seasonFiles {
+		total += len(files)
+	}
+	return total
+}
+
+func sumFilesSize(files []db.MediaFileRecord) int64 {
+	var total int64
+	for _, f := range files {
+		total += f.Size
+	}
+	return total
+}
