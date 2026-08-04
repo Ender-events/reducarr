@@ -2,7 +2,6 @@ package orchestrator
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -33,7 +32,8 @@ func New(database *db.DB, client *arrs.Client, dryRun, verbose bool) *Orchestrat
 // DeleteCandidate removes the candidate file from the Arr instance,
 // all associated torrents from the torrent clients, and cleans up the local database.
 func (o *Orchestrator) DeleteCandidate(ctx context.Context, item db.CandidateRecord) error {
-	report, err := o.deleteCandidateInternal(ctx, item, "DELETE")
+	report := db.NewReportRecord(item, "DELETE")
+	err := o.deleteCandidateInternal(ctx, report, item)
 	if err != nil {
 		return err
 	}
@@ -51,24 +51,7 @@ func (o *Orchestrator) addWarning(report *db.ReportRecord, warning string) {
 	}
 }
 
-func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.CandidateRecord, actionType string) (db.ReportRecord, error) {
-	report := db.ReportRecord{
-		ActionType:      actionType,
-		ArrInstance:     item.ArrInstance,
-		ArrType:         item.ArrType,
-		ItemTitle:       item.Title,
-		MainFileID:      item.FileID,
-		MainFilePath:    item.Path,
-		Status:          "SUCCESS",
-		WarningMessages: []string{},
-	}
-
-	// 1. Fetch associated torrents and ALL files they contain
-	torrents, err := o.db.GetTorrentsByInode(item.Inode)
-	if err != nil {
-		return report, o.failReport(report, fmt.Errorf("fetch associated torrents: %w", err))
-	}
-
+func (o *Orchestrator) fetchAffectedFiles(report *db.ReportRecord, torrents []db.TorrentRecord) map[string]db.MediaFileRecord {
 	var deletedTorrents []map[string]string
 	affectedFiles := make(map[string]db.MediaFileRecord)
 
@@ -100,82 +83,98 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 		totalSize += m.Size
 	}
 
-	report.TotalSizeBefore = totalSize
-	dtJSON, _ := json.Marshal(deletedTorrents)
-	dfJSON, _ := json.Marshal(deletedFilesList)
-	report.DeletedTorrents = string(dtJSON)
-	report.DeletedFiles = string(dfJSON)
+	report.TotalSizeBefore += totalSize
+	report.AppendDeletedTorrents(deletedTorrents)
+	report.AppendDeletedFiles(deletedFilesList)
 
-	// 2. Delete Torrents
+	return affectedFiles
+}
+
+func (o *Orchestrator) deleteTorrent(ctx context.Context, report *db.ReportRecord, torrents []db.TorrentRecord) error {
 	for _, t := range torrents {
-		for _, tInst := range o.client.Torrents {
-			if tInst.Name() == t.ClientName {
-				if tInst.IsReadOnly() {
-					// Read-Only mode: Get files from DB (which has full remote paths), remove from client (entry only), then delete manually
-					allTorrentFiles, err := o.db.GetTorrentsByHash(t.InfoHash)
-					var filesToDelete []string
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "\033[31m✘\033[0m Warning: could not get file list from database for torrent %s: %v\n", t.InfoHash, err)
-					} else {
-						for _, tf := range allTorrentFiles {
-							filesToDelete = append(filesToDelete, fsutil.MapPath(tf.FilePath, tInst.PathMappings()))
-						}
-					}
+		tInst := o.client.FindTorrent(t.ClientName)
+		if tInst == nil {
+			continue
+		}
+		if tInst.IsReadOnly() {
+			// Read-Only mode: Get files from DB (which has full remote paths), remove from client (entry only), then delete manually
+			allTorrentFiles, err := o.db.GetTorrentsByHash(t.InfoHash)
+			var filesToDelete []string
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "\033[31m✘\033[0m Warning: could not get file list from database for torrent %s: %v\n", t.InfoHash, err)
+			} else {
+				for _, tf := range allTorrentFiles {
+					filesToDelete = append(filesToDelete, fsutil.MapPath(tf.FilePath, tInst.PathMappings()))
+				}
+			}
 
-					if o.dryRun {
-						fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent from client %s (metadata only): %s\n", t.ClientName, t.InfoHash[:8])
-						fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would manually delete %d files on disk:\n", len(filesToDelete))
-						for _, p := range filesToDelete {
-							fmt.Printf("  \033[33m[DRY-RUN]\033[0m   - %s\n", p)
-						}
-					} else {
-						if o.verbose {
-							fmt.Printf("  Removing torrent entry from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
-						}
-						if err := tInst.DeleteTorrent(ctx, t.InfoHash, false); err != nil {
-							return report, o.failReport(report, fmt.Errorf("delete torrent entry %s: %w", t.InfoHash, err))
-						}
-
-						if o.verbose {
-							fmt.Printf("  Manually deleting %d files for torrent %s...\n", len(filesToDelete), t.InfoHash[:8])
-						}
-						for _, p := range filesToDelete {
-							if err := os.Remove(p); err != nil {
-								if !os.IsNotExist(err) {
-									warningMsg := fmt.Sprintf("failed to manually delete %s: %v", p, err)
-									o.addWarning(&report, warningMsg)
-									if o.verbose {
-										fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
-									}
-								}
-							}
-						}
-					}
-				} else {
-					// Standard mode: Let the client delete everything
-					if o.dryRun {
-						fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent and files from client %s: %s\n", t.ClientName, t.InfoHash[:8])
-					} else {
-						if o.verbose {
-							fmt.Printf("  Removing torrent and files from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
-						}
-						if err := tInst.DeleteTorrent(ctx, t.InfoHash, true); err != nil {
-							return report, o.failReport(report, fmt.Errorf("delete torrent and files %s: %w", t.InfoHash, err))
-						}
-					}
+			if o.dryRun {
+				fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent from client %s (metadata only): %s\n", t.ClientName, t.InfoHash[:8])
+				fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would manually delete %d files on disk:\n", len(filesToDelete))
+				for _, p := range filesToDelete {
+					fmt.Printf("  \033[33m[DRY-RUN]\033[0m   - %s\n", p)
+				}
+			} else {
+				if o.verbose {
+					fmt.Printf("  Removing torrent entry from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
+				}
+				if err := tInst.DeleteTorrent(ctx, t.InfoHash, false); err != nil {
+					return fmt.Errorf("delete torrent entry %s: %w", t.InfoHash, err)
 				}
 
-				if !o.dryRun {
-					if err := o.db.DeleteTorrentByHash(t.ClientName, t.InfoHash); err != nil {
-						warningMsg := fmt.Sprintf("failed to delete torrent %s from DB: %v", t.InfoHash[:8], err)
-						o.addWarning(&report, warningMsg)
-						if o.verbose {
-							fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
+				if o.verbose {
+					fmt.Printf("  Manually deleting %d files for torrent %s...\n", len(filesToDelete), t.InfoHash[:8])
+				}
+				for _, p := range filesToDelete {
+					if err := os.Remove(p); err != nil {
+						if !os.IsNotExist(err) {
+							warningMsg := fmt.Sprintf("failed to manually delete %s: %v", p, err)
+							o.addWarning(report, warningMsg)
+							if o.verbose {
+								fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
+							}
 						}
 					}
 				}
 			}
+		} else {
+			// Standard mode: Let the client delete everything
+			if o.dryRun {
+				fmt.Printf("  \033[33m[DRY-RUN]\033[0m Would remove torrent and files from client %s: %s\n", t.ClientName, t.InfoHash[:8])
+			} else {
+				if o.verbose {
+					fmt.Printf("  Removing torrent and files from client %s: %s...\n", t.ClientName, t.InfoHash[:8])
+				}
+				if err := tInst.DeleteTorrent(ctx, t.InfoHash, true); err != nil {
+					return fmt.Errorf("delete torrent and files %s: %w", t.InfoHash, err)
+				}
+			}
 		}
+
+		if !o.dryRun {
+			if err := o.db.DeleteTorrentByHash(t.ClientName, t.InfoHash); err != nil {
+				warningMsg := fmt.Sprintf("failed to delete torrent %s from DB: %v", t.InfoHash[:8], err)
+				o.addWarning(report, warningMsg)
+				if o.verbose {
+					fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, report *db.ReportRecord, item db.CandidateRecord) error {
+	// 1. Fetch associated torrents and ALL files they contain
+	torrents, err := o.db.GetTorrentsByInode(item.Inode)
+	if err != nil {
+		return o.failReport(report, fmt.Errorf("fetch associated torrents: %w", err))
+	}
+	affectedFiles := o.fetchAffectedFiles(report, torrents)
+
+	// 2. Delete Torrents
+	if err := o.deleteTorrent(ctx, report, torrents); err != nil {
+		return o.failReport(report, fmt.Errorf("delete torrent: %w", err))
 	}
 
 	// 3. Delete from Arr
@@ -188,25 +187,25 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 		if item.ArrType == "sonarr" {
 			inst := o.client.FindSonarr(item.ArrInstance)
 			if inst == nil {
-				return report, o.failReport(report, fmt.Errorf("sonarr instance %s not found", item.ArrInstance))
+				return o.failReport(report, fmt.Errorf("sonarr instance %s not found", item.ArrInstance))
 			}
 			if err := inst.DeleteEpisodeFile(ctx, item.FileID); err != nil {
 				if strings.Contains(err.Error(), "404 Not Found") {
-					o.addWarning(&report, fmt.Sprintf("sonarr episode file not found (already deleted?): %d", item.FileID))
+					o.addWarning(report, fmt.Sprintf("sonarr episode file not found (already deleted?): %d", item.FileID))
 				} else {
-					return report, o.failReport(report, fmt.Errorf("delete sonarr episode file: %w", err))
+					return o.failReport(report, fmt.Errorf("delete sonarr episode file: %w", err))
 				}
 			}
 		} else {
 			inst := o.client.FindRadarr(item.ArrInstance)
 			if inst == nil {
-				return report, o.failReport(report, fmt.Errorf("radarr instance %s not found", item.ArrInstance))
+				return o.failReport(report, fmt.Errorf("radarr instance %s not found", item.ArrInstance))
 			}
 			if err := inst.DeleteMovieFile(ctx, item.FileID); err != nil {
 				if strings.Contains(err.Error(), "404 Not Found") {
-					o.addWarning(&report, fmt.Sprintf("radarr movie file not found (already deleted?): %d", item.FileID))
+					o.addWarning(report, fmt.Sprintf("radarr movie file not found (already deleted?): %d", item.FileID))
 				} else {
-					return report, o.failReport(report, fmt.Errorf("delete radarr movie file: %w", err))
+					return o.failReport(report, fmt.Errorf("delete radarr movie file: %w", err))
 				}
 			}
 		}
@@ -218,7 +217,7 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 		for _, m := range affectedFiles {
 			if err := o.db.DeleteMediaFile(m.ArrInstance, m.FileID); err != nil {
 				warningMsg := fmt.Sprintf("failed to delete file %d from DB: %v", m.FileID, err)
-				o.addWarning(&report, warningMsg)
+				o.addWarning(report, warningMsg)
 				if o.verbose {
 					fmt.Printf("\033[33m⚠\033[0m %s\n", warningMsg)
 				}
@@ -226,10 +225,10 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 		}
 	}
 
-	return report, nil
+	return nil
 }
 
-func (o *Orchestrator) failReport(r db.ReportRecord, err error) error {
+func (o *Orchestrator) failReport(r *db.ReportRecord, err error) error {
 	r.Status = "FAILED"
 	r.ErrorMessage = err.Error()
 	if !o.dryRun {
@@ -244,7 +243,8 @@ func (o *Orchestrator) UpgradeCandidate(ctx context.Context, item db.CandidateRe
 	if o.verbose {
 		fmt.Printf("Cleaning up current files and torrents for: %s...\n", item.Title)
 	}
-	report, err := o.deleteCandidateInternal(ctx, item, "UPGRADE")
+	report := db.NewReportRecord(item, "UPGRADE")
+	err := o.deleteCandidateInternal(ctx, report, item)
 	if err != nil {
 		return err
 	}
@@ -299,36 +299,55 @@ func (o *Orchestrator) UpgradeCandidate(ctx context.Context, item db.CandidateRe
 
 // GrabSeasonRelease triggers a grab for a season-scoped Sonarr release.
 // It does not delete existing episode files; Sonarr handles replacement on import.
-func (o *Orchestrator) GrabSeasonRelease(ctx context.Context, instance, seriesTitle string, release *sonarr.ReleaseResource) error {
-	if o.dryRun {
-		fmt.Printf("  [DRY-RUN] Would grab season release: %s\n", arrs.GetString(release.Title))
-		return nil
-	}
-
-	inst := o.client.FindSonarr(instance)
-	if inst == nil {
-		return fmt.Errorf("sonarr instance %s not found", instance)
-	}
-
-	if o.verbose {
-		fmt.Printf("Grabbing season release: %s...\n", arrs.GetString(release.Title))
-	}
-
-	return fmt.Errorf("Not Ready yet")
-	if err := inst.DownloadRelease(ctx, release); err != nil {
-		return fmt.Errorf("grab sonarr season release: %w", err)
-	}
-
-	report := db.ReportRecord{
+func (o *Orchestrator) GrabSeasonRelease(ctx context.Context, inst arrs.SonarrInstance, series *sonarr.SeriesResource, release *sonarr.ReleaseResource) error {
+	report := &db.ReportRecord{
 		ActionType:      "SEASON_GRAB",
-		ArrInstance:     instance,
+		ArrInstance:     inst.Name(),
 		ArrType:         "sonarr",
-		ItemTitle:       seriesTitle,
+		ItemTitle:       series.GetTitle(),
 		NewReleaseTitle: arrs.GetString(release.Title),
 		NewIndexer:      arrs.GetString(release.Indexer),
 		Status:          "SUCCESS",
 		WarningMessages: []string{},
 	}
+	if o.verbose {
+		fmt.Printf("Grabbing season release: %s...\n", arrs.GetString(release.Title))
+	}
+
+	files, err := o.db.GetMediaFilesBySeason(inst.Name(), *series.Id, release.GetSeasonNumber())
+	if err != nil {
+		return fmt.Errorf("get media files by season: %w", err)
+	}
+	uniqTR := make(map[string]map[string]db.TorrentRecord)
+
+	for _, file := range files {
+		torrents, err := o.db.GetTorrentsByInode(file.Inode)
+		if err != nil {
+			return o.failReport(report, fmt.Errorf("fetch associated torrents: %w", err))
+		}
+		for _, torrent := range torrents {
+			if _, ok := uniqTR[torrent.ClientName]; !ok {
+				uniqTR[torrent.ClientName] = make(map[string]db.TorrentRecord)
+			}
+			uniqTR[torrent.ClientName][torrent.InfoHash] = torrent
+		}
+	}
+	var torrents []db.TorrentRecord
+	for _, tr := range uniqTR {
+		for _, torrent := range tr {
+			torrents = append(torrents, torrent)
+		}
+	}
+	_ = o.fetchAffectedFiles(report, torrents)
+	if o.dryRun {
+		fmt.Printf("  [DRY-RUN] Would grab season release: %s\n", arrs.GetString(release.Title))
+		return nil
+	} else {
+		if err := inst.DownloadRelease(ctx, release); err != nil {
+			return fmt.Errorf("grab sonarr season release: %w", err)
+		}
+	}
+
 	if release.Size != nil {
 		report.TotalSizeAfter = *release.Size
 	}

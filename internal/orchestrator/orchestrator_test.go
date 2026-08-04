@@ -1296,8 +1296,11 @@ func TestGrabSeasonRelease_Success(t *testing.T) {
 
 	orch := New(database, client, false, false)
 
+	seriesTitle := "My Show"
+	seriesID := int32(1)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
 	release := &sonarr.ReleaseResource{}
-	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	err := orch.GrabSeasonRelease(context.Background(), mockSonarr, series, release)
 	require.NoError(t, err)
 	assert.True(t, downloadCalled)
 	assert.Equal(t, release, downloadedRelease)
@@ -1317,10 +1320,16 @@ func TestGrabSeasonRelease_InstanceNotFound(t *testing.T) {
 	client := createTestClient()
 	orch := New(database, client, false, false)
 
+	seriesTitle := "My Show"
+	seriesID := int32(1)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
 	release := &sonarr.ReleaseResource{}
-	err := orch.GrabSeasonRelease(context.Background(), "missing-sonarr", "My Show", release)
+	mockSonarr := NewMockSonarrInstance("missing-sonarr", "test-api-key")
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, r *sonarr.ReleaseResource) error {
+		return errors.New("instance error")
+	}
+	err := orch.GrabSeasonRelease(context.Background(), mockSonarr, series, release)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "sonarr instance missing-sonarr not found")
 }
 
 func TestGrabSeasonRelease_DownloadError(t *testing.T) {
@@ -1336,8 +1345,11 @@ func TestGrabSeasonRelease_DownloadError(t *testing.T) {
 
 	orch := New(database, client, false, false)
 
+	seriesTitle := "My Show"
+	seriesID := int32(1)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
 	release := &sonarr.ReleaseResource{}
-	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	err := orch.GrabSeasonRelease(context.Background(), mockSonarr, series, release)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "grab sonarr season release")
 }
@@ -1357,8 +1369,11 @@ func TestGrabSeasonRelease_DryRun(t *testing.T) {
 
 	orch := New(database, client, true, false) // dryRun = true
 
+	seriesTitle := "My Show"
+	seriesID := int32(1)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
 	release := &sonarr.ReleaseResource{}
-	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	err := orch.GrabSeasonRelease(context.Background(), mockSonarr, series, release)
 	require.NoError(t, err)
 	assert.False(t, downloadCalled, "DownloadRelease must not be called in dry-run mode")
 
@@ -1379,9 +1394,12 @@ func TestGrabSeasonRelease_WithSize(t *testing.T) {
 	client.Sonarr = append(client.Sonarr, mockSonarr)
 	orch := New(database, client, false, false)
 
+	seriesTitle := "My Show"
+	seriesID := int32(1)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
 	size := int64(5_000_000_000)
 	release := &sonarr.ReleaseResource{Size: &size}
-	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	err := orch.GrabSeasonRelease(context.Background(), mockSonarr, series, release)
 	require.NoError(t, err)
 
 	reports, err := database.GetReports(10, 0)
@@ -1402,7 +1420,10 @@ func TestGrabSeasonRelease_Verbose(t *testing.T) {
 	client.Sonarr = append(client.Sonarr, mockSonarr)
 	orch := New(database, client, false, true) // verbose = true
 
+	seriesTitle := "My Show"
+	seriesID := int32(1)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
 	release := &sonarr.ReleaseResource{}
-	err := orch.GrabSeasonRelease(context.Background(), "test-sonarr", "My Show", release)
+	err := orch.GrabSeasonRelease(context.Background(), mockSonarr, series, release)
 	require.NoError(t, err)
 }

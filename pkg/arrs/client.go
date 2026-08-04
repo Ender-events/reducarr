@@ -419,6 +419,15 @@ func (c *Client) FindRadarr(name string) RadarrInstance {
 	return nil
 }
 
+func (c *Client) FindTorrent(name string) TorrentInstance {
+	for _, t := range c.Torrents {
+		if t.Name() == name {
+			return t
+		}
+	}
+	return nil
+}
+
 func GetString(n sonarr.NullableString) string {
 	if n.Get() == nil {
 		return ""

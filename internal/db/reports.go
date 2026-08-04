@@ -25,7 +25,40 @@ type ReportRecord struct {
 	CreatedAt       string
 }
 
-func (d *DB) InsertReport(r ReportRecord) error {
+func NewReportRecord(item CandidateRecord, actionType string) *ReportRecord {
+	return &ReportRecord{
+		ActionType:      actionType,
+		ArrInstance:     item.ArrInstance,
+		ArrType:         item.ArrType,
+		ItemTitle:       item.Title,
+		MainFileID:      item.FileID,
+		MainFilePath:    item.Path,
+		Status:          "SUCCESS",
+		WarningMessages: []string{},
+	}
+}
+
+func (r *ReportRecord) AppendDeletedFiles(appended []map[string]any) {
+	var current []map[string]any
+	if len(r.DeletedFiles) > 0 {
+		json.Unmarshal([]byte(r.DeletedFiles), &current)
+	}
+	current = append(current, appended...)
+	dfJSON, _ := json.Marshal(current)
+	r.DeletedFiles = string(dfJSON)
+}
+
+func (r *ReportRecord) AppendDeletedTorrents(appended []map[string]string) {
+	var current []map[string]string
+	if len(r.DeletedTorrents) > 0 {
+		json.Unmarshal([]byte(r.DeletedTorrents), &current)
+	}
+	current = append(current, appended...)
+	dtJSON, _ := json.Marshal(current)
+	r.DeletedTorrents = string(dtJSON)
+}
+
+func (d *DB) InsertReport(r *ReportRecord) error {
 	warningJSON := ""
 	if len(r.WarningMessages) > 0 {
 		var err error
