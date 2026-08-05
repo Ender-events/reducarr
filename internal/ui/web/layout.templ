@@ -123,6 +123,46 @@ templ Layout(title string, username string, instances []InstanceInfo) {
 			</div>
 			<!-- Container for dynamic modals -->
 			<div id="modal-container"></div>
+			<!-- Toast container -->
+			<div id="toast-container" class="toast toast-top toast-end z-50"></div>
+			<script>
+				function showToast(msg, type) {
+					var alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+					var toast = document.createElement('div');
+					toast.className = 'alert ' + alertClass + ' shadow-lg max-w-xs animate-in slide-in-from-top-2';
+					toast.innerHTML = '<span>' + msg + '</span>';
+					var container = document.getElementById('toast-container');
+					if (container) {
+						container.appendChild(toast);
+						setTimeout(function() { toast.remove(); }, 4000);
+					}
+				}
+
+				function checkToastCookie() {
+					var cookies = document.cookie.split(';');
+					for (var i = 0; i < cookies.length; i++) {
+						var c = cookies[i].trim();
+						if (c.indexOf('reducarr_toast=') === 0) {
+							var val = decodeURIComponent(c.substring('reducarr_toast='.length));
+							document.cookie = 'reducarr_toast=; Path=/; Max-Age=-1;';
+							var parts = val.split(':');
+							var type = parts[0] || 'info';
+							var msg = parts.slice(1).join(':') || val;
+							showToast(msg, type);
+							break;
+						}
+					}
+				}
+
+				document.addEventListener('DOMContentLoaded', function() {
+					checkToastCookie();
+				});
+
+				document.addEventListener('showToast', function(e) {
+					var detail = e.detail;
+					showToast((detail && detail.msg) || 'Notification', (detail && detail.type) || 'info');
+				});
+			</script>
 		</body>
 	</html>
 }
