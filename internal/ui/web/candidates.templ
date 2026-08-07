@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/dustin/go-humanize"
+	"math"
 	"strings"
 )
 
@@ -162,7 +163,7 @@ templ SearchModal(title string, instance string, id int32, releases []ReleaseInf
 	</dialog>
 }
 
-templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, instances []InstanceInfo) {
+templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, instances []InstanceInfo, page, pageSize, total int) {
 	@Layout("Candidates", username, instances) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -179,7 +180,7 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 					if activeInstance != "" {
 						<a href="/candidates" class="btn btn-xs btn-ghost text-error">Clear Filter</a>
 					}
-					<div class="badge badge-primary badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d items", len(candidates)) }</div>
+					<div class="badge badge-primary badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d items", total) }</div>
 				</div>
 			</div>
 
@@ -209,9 +210,54 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 					}
 				}
 			</div>
+
+			<!-- Pagination -->
+			@CandidatesPagination(page, pageSize, total, activeInstance)
 		</div>
 
 		<!-- Container for dynamic modals -->
 		<div id="modal-container"></div>
+	}
+}
+
+templ CandidatesPagination(page, pageSize, total int, instance string) {
+	if total <= pageSize {
+		<!-- no pagination needed -->
+	} else {
+		{{ totalPages := int(math.Ceil(float64(total) / float64(pageSize))) }}
+		{{ start := (page-1)*pageSize + 1 }}
+		{{ end := page * pageSize }}
+		if end > total {
+			{{ end = total }}
+		}
+		<div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t border-base-300">
+			<span class="text-sm text-base-content/50">
+				Showing { fmt.Sprintf("%d–%d", start, end) } of { fmt.Sprintf("%d", total) }
+			</span>
+			<div class="join">
+				<!-- Previous -->
+				if page <= 1 {
+					<button class="join-item btn btn-sm" disabled>«</button>
+				} else {
+					<a href={ templ.SafeURL(paginationURL(page-1, instance)) } class="join-item btn btn-sm">«</a>
+				}
+				<!-- Page numbers -->
+				for _, p := range paginationPages(page, totalPages) {
+					if p == 0 {
+						<button class="join-item btn btn-sm btn-disabled" disabled>…</button>
+					} else if p == page {
+						<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", p) }</button>
+					} else {
+						<a href={ templ.SafeURL(paginationURL(p, instance)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", p) }</a>
+					}
+				}
+				<!-- Next -->
+				if page >= totalPages {
+					<button class="join-item btn btn-sm" disabled>»</button>
+				} else {
+					<a href={ templ.SafeURL(paginationURL(page+1, instance)) } class="join-item btn btn-sm">»</a>
+				}
+			</div>
+		</div>
 	}
 }
