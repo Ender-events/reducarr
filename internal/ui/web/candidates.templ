@@ -226,10 +226,7 @@ templ CandidatesPagination(page, pageSize, total int, instance string) {
 	} else {
 		{{ totalPages := int(math.Ceil(float64(total) / float64(pageSize))) }}
 		{{ start := (page-1)*pageSize + 1 }}
-		{{ end := page * pageSize }}
-		if end > total {
-			{{ end = total }}
-		}
+		{{ end := min(page*pageSize, total) }}
 		<div class="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-4 border-t border-base-300">
 			<span class="text-sm text-base-content/50">
 				Showing { fmt.Sprintf("%d–%d", start, end) } of { fmt.Sprintf("%d", total) }
