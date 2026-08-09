@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -41,7 +42,8 @@ type AutomationConfig struct {
 }
 
 type WebUIConfig struct {
-	PageSize int `mapstructure:"pageSize"`
+	PageSize             int `mapstructure:"pageSize"`
+	MinRejectionSeverity int `mapstructure:"minRejectionSeverity"`
 }
 
 type Config struct {
@@ -74,6 +76,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("automation.minSeeders", 3)
 	viper.SetDefault("automation.rateLimit", 6)
 	viper.SetDefault("webui.pageSize", 25)
+	viper.SetDefault("webui.minRejectionSeverity", math.MaxInt)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

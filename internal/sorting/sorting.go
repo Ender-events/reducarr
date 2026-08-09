@@ -64,7 +64,7 @@ func RejectionSeverity(rejections []string) int {
 
 	hasGeneral := false
 	for _, r := range rejections {
-		if strings.Contains(r, "Unknown Movie") || strings.Contains(r, "Wrong episode") {
+		if strings.Contains(r, "Unknown Movie") || strings.Contains(r, "Wrong episode") || strings.Contains(r, "Wrong season") || strings.Contains(r, "Wrong series") {
 			return 3 // Absolute worst
 		}
 		if !strings.Contains(r, "does not allow upgrades") && !strings.Contains(r, "equal or higher preference") {
