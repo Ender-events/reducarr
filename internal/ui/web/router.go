@@ -562,6 +562,11 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		idStr := r.PathValue("id")
 		id64, _ := strconv.ParseInt(idStr, 10, 32)
 		id := int32(id64)
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		vlog("Fetching releases for: %s:%d", instance, id)
 
@@ -571,12 +576,16 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			return
 		}
 
+		// TODO: move this logic into orchestrator ?
 		var releaseInfos []ReleaseInfo
 		if target.ArrType == "radarr" {
 			inst := client.FindRadarr(instance)
 			_ = inst.TriggerMovieSearch(r.Context(), target.ItemID)
 			releases, _ := inst.ListReleases(r.Context(), target.ItemID)
 			for _, rl := range releases {
+				if sorting.RejectionSeverity(rl.GetRejections()) >= cfg.WebUI.MinRejectionSeverity {
+					continue
+				}
 				score := int32(0)
 				if rl.CustomFormatScore != nil {
 					score = *rl.CustomFormatScore
@@ -609,6 +618,9 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			if epID != 0 {
 				releases, _ := inst.ListReleases(r.Context(), &epID, nil, nil)
 				for _, rl := range releases {
+					if sorting.RejectionSeverity(rl.GetRejections()) >= cfg.WebUI.MinRejectionSeverity {
+						continue
+					}
 					score := int32(0)
 					if rl.CustomFormatScore != nil {
 						score = *rl.CustomFormatScore
