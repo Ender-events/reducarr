@@ -67,6 +67,7 @@ func setRedirectCookie(w http.ResponseWriter, urlStr string) {
 		Value:    urlStr,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -82,6 +83,7 @@ func getAndClearRedirectCookie(w http.ResponseWriter, r *http.Request) string {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 	return c.Value
@@ -94,6 +96,7 @@ func setToastCookie(w http.ResponseWriter, msg string, toastType string) {
 		Value:    url.QueryEscape(val),
 		Path:     "/",
 		HttpOnly: false,
+		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
