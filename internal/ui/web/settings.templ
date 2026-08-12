@@ -1,5 +1,9 @@
 package web
 
+import (
+	"fmt"
+)
+
 // BuildInfo holds build-time metadata displayed in the Settings page.
 type BuildInfo struct {
 	Version   string
@@ -8,7 +12,7 @@ type BuildInfo struct {
 	BuildTime string
 }
 
-templ SettingsPage(username string, configContent string, scanRunning bool, info BuildInfo) {
+templ SettingsPage(username string, configContent string, progress ScanProgress, info BuildInfo) {
 	@Layout("Settings", username, nil) {
 		<div class="space-y-8 animate-in fade-in duration-500">
 			<div>
@@ -21,32 +25,7 @@ templ SettingsPage(username string, configContent string, scanRunning bool, info
 					<div class="card bg-base-100 shadow-sm border border-base-300">
 						<div class="card-body">
 							<h2 class="card-title text-lg font-bold">Manual Scans</h2>
-							<div id="scan-controls" class="space-y-4 mt-4">
-								if scanRunning {
-									<div class="alert alert-info py-3 shadow-sm border-none bg-info/10 text-info">
-										<span class="loading loading-spinner loading-sm"></span>
-										<span class="text-sm font-bold uppercase tracking-tight">Scan in progress...</span>
-									</div>
-									<button disabled class="btn btn-block btn-disabled opacity-30 font-bold">Start Full Scan</button>
-								} else {
-									<button
-										class="btn btn-block btn-primary font-bold shadow-md"
-										hx-post="/api/scan/full"
-										hx-target="#scan-controls"
-										hx-swap="outerHTML"
-									>
-										Start Full Scan
-									</button>
-									<button
-										class="btn btn-block btn-outline font-bold"
-										hx-post="/api/scan/incremental"
-										hx-target="#scan-controls"
-										hx-swap="outerHTML"
-									>
-										Start Incremental Scan
-									</button>
-								}
-							</div>
+							@ScanControls(progress)
 							<p class="text-[10px] opacity-50 mt-4 leading-tight italic text-center text-left">
 								Note: Scans run in the background. You can navigate away and check the Dashboard for results.
 							</p>
@@ -156,15 +135,114 @@ templ SettingsPage(username string, configContent string, scanRunning bool, info
 	}
 }
 
-templ ScanControls(isRunning bool) {
-	<div id="scan-controls" class="space-y-4" hx-swap-oob="true">
-		if isRunning {
-			<div class="alert alert-info py-3 shadow-sm border-none bg-info/10 text-info">
-				<span class="loading loading-spinner loading-sm"></span>
-				<span class="text-sm font-bold uppercase tracking-tight">Scan started...</span>
+templ ScanControls(progress ScanProgress) {
+	if progress.IsRunning {
+		<div
+			id="scan-controls"
+			class="space-y-4"
+			hx-get="/api/scan/status"
+			hx-trigger="every 1s"
+			hx-swap="outerHTML"
+		>
+			<div class="p-4 rounded-xl bg-base-200/60 border border-base-300 space-y-3 text-left">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<span class="loading loading-spinner loading-md text-primary"></span>
+						<span class="text-xs font-bold uppercase tracking-wider text-primary">
+							if progress.ScanType == "incremental" {
+								Incremental Scan
+							} else {
+								Full Scan
+							}
+						</span>
+					</div>
+					<span class="badge badge-primary badge-sm font-mono font-bold">{ fmt.Sprintf("%d%%", progress.OverallPercent()) }</span>
+				</div>
+
+				<!-- Overall Progress Bar -->
+				<div class="w-full space-y-1">
+					<progress class="progress progress-primary w-full" value={ fmt.Sprintf("%d", progress.OverallPercent()) } max="100"></progress>
+				</div>
+
+				if progress.CurrentItem != "" {
+					<p class="text-xs text-base-content/70 font-mono truncate" title={ progress.CurrentItem }>
+						<span class="opacity-50">Current:</span> { progress.CurrentItem }
+					</p>
+				}
+
+				<!-- Category Breakdown (Torrents, Sonarr, Radarr) -->
+				<div class="space-y-2 pt-2 border-t border-base-300/50 text-xs">
+					<!-- Torrents Progress -->
+					<div class="space-y-1">
+						<div class="flex justify-between items-center text-[11px]">
+							<span class="font-semibold opacity-70">Torrents</span>
+							<span class="font-mono text-[10px] opacity-80">
+								if progress.TorrentsTotal > 0 {
+									{ fmt.Sprintf("%d/%d (%d%% remain)", progress.TorrentsDone, progress.TorrentsTotal, 100 - progress.TorrentsPercent()) }
+								} else if progress.Phase != "torrents" && progress.Phase != "idle" {
+									Complete (0% remain)
+								} else {
+									Pending
+								}
+							</span>
+						</div>
+						<progress class="progress progress-accent h-1.5 w-full" value={ fmt.Sprintf("%d", progress.TorrentsPercent()) } max="100"></progress>
+					</div>
+
+					<!-- Sonarr Progress -->
+					<div class="space-y-1">
+						<div class="flex justify-between items-center text-[11px]">
+							<span class="font-semibold opacity-70">Sonarr</span>
+							<span class="font-mono text-[10px] opacity-80">
+								if progress.SonarrTotal > 0 {
+									{ fmt.Sprintf("%d/%d (%d%% remain)", progress.SonarrDone, progress.SonarrTotal, 100 - progress.SonarrPercent()) }
+								} else if progress.Phase == "radarr" || progress.Phase == "completed" {
+									Complete (0% remain)
+								} else {
+									Pending
+								}
+							</span>
+						</div>
+						<progress class="progress progress-info h-1.5 w-full" value={ fmt.Sprintf("%d", progress.SonarrPercent()) } max="100"></progress>
+					</div>
+
+					<!-- Radarr Progress -->
+					<div class="space-y-1">
+						<div class="flex justify-between items-center text-[11px]">
+							<span class="font-semibold opacity-70">Radarr</span>
+							<span class="font-mono text-[10px] opacity-80">
+								if progress.RadarrTotal > 0 {
+									{ fmt.Sprintf("%d/%d (%d%% remain)", progress.RadarrDone, progress.RadarrTotal, 100 - progress.RadarrPercent()) }
+								} else if progress.Phase == "completed" {
+									Complete (0% remain)
+								} else {
+									Pending
+								}
+							</span>
+						</div>
+						<progress class="progress progress-warning h-1.5 w-full" value={ fmt.Sprintf("%d", progress.RadarrPercent()) } max="100"></progress>
+					</div>
+				</div>
+
+				if progress.TotalScanned > 0 || progress.TotalCandidate > 0 {
+					<div class="flex justify-between text-[11px] pt-1 opacity-70 border-t border-base-300/30">
+						<span>Scanned: <strong class="font-mono">{ fmt.Sprintf("%d", progress.TotalScanned) }</strong></span>
+						<span>Candidates: <strong class="font-mono text-warning">{ fmt.Sprintf("%d", progress.TotalCandidate) }</strong></span>
+					</div>
+				}
 			</div>
+
 			<button disabled class="btn btn-block btn-disabled opacity-30 font-bold">Start Full Scan</button>
-		} else {
+			<button disabled class="btn btn-block btn-disabled opacity-30 font-bold">Start Incremental Scan</button>
+		</div>
+	} else {
+		<div id="scan-controls" class="space-y-4">
+			if progress.Phase == "completed" {
+				<div class="alert alert-success py-2.5 shadow-sm text-xs font-bold text-left">
+					<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-4 w-4" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+					<span>Last scan completed! ({ fmt.Sprintf("%d", progress.TotalScanned) } files checked, { fmt.Sprintf("%d", progress.TotalCandidate) } candidates found)</span>
+				</div>
+			}
 			<button
 				class="btn btn-block btn-primary font-bold shadow-md"
 				hx-post="/api/scan/full"
@@ -181,8 +259,8 @@ templ ScanControls(isRunning bool) {
 			>
 				Start Incremental Scan
 			</button>
-		}
-	</div>
+		</div>
+	}
 }
 
 templ HealthInfo(results []HealthResult) {

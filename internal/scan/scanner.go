@@ -28,6 +28,8 @@ type Scanner struct {
 
 	TotalScanned   int
 	TotalCandidate int
+
+	OnProgress func(phase string, item string, done int, total int)
 }
 
 func (s *Scanner) Run(ctx context.Context) error {
@@ -114,6 +116,10 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 		return fmt.Errorf("get series: %w", err)
 	}
 
+	if s.OnProgress != nil {
+		s.OnProgress("sonarr", fmt.Sprintf("Listing %d series...", len(seriesList)), 0, len(seriesList))
+	}
+
 	if s.Verbose {
 		msg := fmt.Sprintf("[Sonarr: %s] Listing %d series...", inst.Name(), len(seriesList))
 		s.UI.LogPermanent(msg)
@@ -127,7 +133,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 		s.UI.LogPermanent(fmt.Sprintf("\n--- Scanning Sonarr Instance: %s ---", inst.Name()))
 	}
 
-	for _, series := range seriesList {
+	for sIdx, series := range seriesList {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -140,6 +146,9 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 		}
 
 		title := arrs.GetString(series.Title)
+		if s.OnProgress != nil {
+			s.OnProgress("sonarr", title, sIdx+1, len(seriesList))
+		}
 
 		files, _, err := inst.Api().EpisodeFileAPI.ListEpisodeFile(authCtx).SeriesId(*series.Id).Execute()
 		if err != nil {
@@ -262,6 +271,10 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 		return fmt.Errorf("get movies: %w", err)
 	}
 
+	if s.OnProgress != nil {
+		s.OnProgress("radarr", fmt.Sprintf("Listing %d movies...", len(movies)), 0, len(movies))
+	}
+
 	sort.Slice(movies, func(i, j int) bool {
 		return *movies[i].Id < *movies[j].Id
 	})
@@ -270,7 +283,7 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 		s.UI.LogPermanent(fmt.Sprintf("\n--- Scanning Radarr Instance: %s ---", inst.Name()))
 	}
 
-	for _, movie := range movies {
+	for mIdx, movie := range movies {
 		select {
 		case <-ctx.Done():
 			return nil
@@ -283,6 +296,9 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 		}
 
 		title := arrs.GetStringRadarr(movie.Title)
+		if s.OnProgress != nil {
+			s.OnProgress("radarr", title, mIdx+1, len(movies))
+		}
 
 		if arrs.GetBoolRadarr(movie.HasFile) && movie.MovieFile != nil {
 			duration := 0.0
@@ -516,12 +532,23 @@ func (s *Scanner) runIncrementalScan(
 		return fmt.Errorf("list history: %w", err)
 	}
 
+	if s.OnProgress != nil {
+		s.OnProgress(arrType, fmt.Sprintf("Checking %d history items...", len(history)), 0, len(history))
+	}
+
 	var latestID string
 	if len(history) > 0 {
 		latestID = fmt.Sprintf("%d", history[0].ID)
 	}
 
-	for _, h := range history {
+	for hIdx, h := range history {
+		if s.OnProgress != nil {
+			itemTitle := h.SourceTitle
+			if itemTitle == "" {
+				itemTitle = fmt.Sprintf("Event #%d", h.ID)
+			}
+			s.OnProgress(arrType, itemTitle, hIdx+1, len(history))
+		}
 		idStr := fmt.Sprintf("%d", h.ID)
 		if lastID != "" && idStr <= lastID {
 			break
