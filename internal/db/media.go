@@ -109,6 +109,57 @@ func (d *DB) GetCandidatesWithMediaFiltered(instance string) ([]CandidateRecord,
 	return records, nil
 }
 
+func (d *DB) CountCandidatesFiltered(instance string) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM candidates c
+		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		WHERE c.is_ignored = 0
+	`
+	var args []any
+	if instance != "" {
+		query += " AND m.arr_instance = ?"
+		args = append(args, instance)
+	}
+	var count int
+	return count, d.QueryRow(query, args...).Scan(&count)
+}
+
+func (d *DB) GetCandidatesWithMediaPaginated(instance string, limit, offset int) ([]CandidateRecord, error) {
+	query := `
+		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored
+		FROM candidates c
+		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		WHERE c.is_ignored = 0
+	`
+	var args []any
+	if instance != "" {
+		query += " AND m.arr_instance = ?"
+		args = append(args, instance)
+	}
+	query += " ORDER BY m.size DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	rows, err := d.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	var records []CandidateRecord
+	for rows.Next() {
+		var r CandidateRecord
+		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber, &r.Reason, &r.IsIgnored); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
 func (d *DB) GetIgnoredCandidates() ([]CandidateRecord, error) {
 	rows, err := d.Query(`
 		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored

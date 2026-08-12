@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -40,12 +41,18 @@ type AutomationConfig struct {
 	RateLimit        int    `mapstructure:"rateLimit"` // searches per hour
 }
 
+type WebUIConfig struct {
+	PageSize             int `mapstructure:"pageSize"`
+	MinRejectionSeverity int `mapstructure:"minRejectionSeverity"`
+}
+
 type Config struct {
 	Sonarr      []ArrInstance       `mapstructure:"sonarr"`
 	Radarr      []ArrInstance       `mapstructure:"radarr"`
 	QBittorrent []QBittorrentConfig `mapstructure:"qbittorrent"`
 	Scoring     ScoringConfig       `mapstructure:"scoring"`
 	Automation  AutomationConfig    `mapstructure:"automation"`
+	WebUI       WebUIConfig         `mapstructure:"webui"`
 	DryRun      bool                `mapstructure:"dryRun"`
 }
 
@@ -68,6 +75,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("automation.minSizeReduction", "10%")
 	viper.SetDefault("automation.minSeeders", 3)
 	viper.SetDefault("automation.rateLimit", 6)
+	viper.SetDefault("webui.pageSize", 25)
+	viper.SetDefault("webui.minRejectionSeverity", math.MaxInt)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

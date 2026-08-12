@@ -67,3 +67,49 @@ func buildInstanceInfos() []InstanceInfo {
 	}
 	return out
 }
+
+// paginationURL builds a /candidates URL for the given page and optional instance filter.
+func paginationURL(page int, instance string) string {
+	if instance != "" {
+		return fmt.Sprintf("/candidates?page=%d&instance=%s", page, instance)
+	}
+	return fmt.Sprintf("/candidates?page=%d", page)
+}
+
+// paginationPages returns the list of page numbers to display, with 0 representing an ellipsis.
+// Always shows first/last page and a window of ±2 around the current page.
+func paginationPages(current, total int) []int {
+	if total <= 7 {
+		pages := make([]int, total)
+		for i := range pages {
+			pages[i] = i + 1
+		}
+		return pages
+	}
+	var pages []int
+	addPage := func(p int) {
+		if len(pages) > 0 && pages[len(pages)-1] == p {
+			return
+		}
+		pages = append(pages, p)
+	}
+	addEllipsis := func() {
+		if len(pages) > 0 && pages[len(pages)-1] != 0 {
+			pages = append(pages, 0)
+		}
+	}
+	addPage(1)
+	if current > 4 {
+		addEllipsis()
+	}
+	for p := current - 2; p <= current+2; p++ {
+		if p > 1 && p < total {
+			addPage(p)
+		}
+	}
+	if current < total-3 {
+		addEllipsis()
+	}
+	addPage(total)
+	return pages
+}

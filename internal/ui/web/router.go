@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +56,67 @@ var startTime time.Time
 func getUser(r *http.Request) string {
 	u, _ := r.Context().Value(UserContextKey).(string)
 	return u
+}
+
+const redirectCookieName = "reducarr_redirect_back"
+const toastCookieName = "reducarr_toast"
+
+func setRedirectCookie(w http.ResponseWriter, urlStr string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     redirectCookieName,
+		Value:    urlStr,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func getAndClearRedirectCookie(w http.ResponseWriter, r *http.Request) string {
+	c, err := r.Cookie(redirectCookieName)
+	if err != nil {
+		return ""
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     redirectCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return c.Value
+}
+
+func setToastCookie(w http.ResponseWriter, msg string, toastType string) {
+	val := fmt.Sprintf("%s:%s", toastType, msg)
+	http.SetCookie(w, &http.Cookie{
+		Name:     toastCookieName,
+		Value:    url.QueryEscape(val),
+		Path:     "/",
+		HttpOnly: false,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func getRedirectPath(referer string) string {
+	if referer == "" {
+		return ""
+	}
+	u, err := url.Parse(referer)
+	if err != nil {
+		return ""
+	}
+	if strings.HasPrefix(u.Path, "/candidates") || strings.HasPrefix(u.Path, "/shows/") || strings.HasPrefix(u.Path, "/search") {
+		reqPath := u.Path
+		if u.RawQuery != "" {
+			reqPath += "?" + u.RawQuery
+		}
+		return reqPath
+	}
+	return ""
 }
 
 func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler {
@@ -161,13 +224,30 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 	mux.HandleFunc("GET /candidates", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Candidates page")
 		instanceFilter := r.URL.Query().Get("instance")
-		candidates, err := database.GetCandidatesWithMediaFiltered(instanceFilter)
+		pageStr := r.URL.Query().Get("page")
+		page, _ := strconv.Atoi(pageStr)
+		if page < 1 {
+			page = 1
+		}
+		cfg, _ := config.LoadConfig()
+		pageSize := cfg.WebUI.PageSize
+		if pageSize <= 0 {
+			pageSize = 25
+		}
+		offset := (page - 1) * pageSize
+
+		total, err := database.CountCandidatesFiltered(instanceFilter)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		candidates, err := database.GetCandidatesWithMediaPaginated(instanceFilter, pageSize, offset)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		instances := buildInstanceInfos()
-		if err := CandidatesPage(getUser(r), candidates, instanceFilter, instances).Render(r.Context(), w); err != nil {
+		if err := CandidatesPage(getUser(r), candidates, instanceFilter, instances, page, pageSize, total).Render(r.Context(), w); err != nil {
 			vlog("Failed to render candidates page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -237,6 +317,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		id := int32(id64)
 
 		vlog("Accessing Optimization page for: %s:%d", instance, id)
+
+		if refPath := getRedirectPath(r.Referer()); refPath != "" {
+			setRedirectCookie(w, refPath)
+		}
 
 		media, err := database.GetMediaFile(instance, id)
 		if err != nil || media == nil {
@@ -481,6 +565,11 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		idStr := r.PathValue("id")
 		id64, _ := strconv.ParseInt(idStr, 10, 32)
 		id := int32(id64)
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		vlog("Fetching releases for: %s:%d", instance, id)
 
@@ -490,12 +579,16 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			return
 		}
 
+		// TODO: move this logic into orchestrator ?
 		var releaseInfos []ReleaseInfo
 		if target.ArrType == "radarr" {
 			inst := client.FindRadarr(instance)
 			_ = inst.TriggerMovieSearch(r.Context(), target.ItemID)
 			releases, _ := inst.ListReleases(r.Context(), target.ItemID)
 			for _, rl := range releases {
+				if sorting.RejectionSeverity(rl.GetRejections()) >= cfg.WebUI.MinRejectionSeverity {
+					continue
+				}
 				score := int32(0)
 				if rl.CustomFormatScore != nil {
 					score = *rl.CustomFormatScore
@@ -528,6 +621,9 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			if epID != 0 {
 				releases, _ := inst.ListReleases(r.Context(), &epID, nil, nil)
 				for _, rl := range releases {
+					if sorting.RejectionSeverity(rl.GetRejections()) >= cfg.WebUI.MinRejectionSeverity {
+						continue
+					}
 					score := int32(0)
 					if rl.CustomFormatScore != nil {
 						score = *rl.CustomFormatScore
@@ -627,6 +723,14 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		}
 
 		vlog("Successfully triggered upgrade for: %s", targetRecord.Title)
+		redirectTo := getAndClearRedirectCookie(w, r)
+		if redirectTo == "" {
+			redirectTo = "/candidates"
+		}
+		toastMsg := fmt.Sprintf("Release '%s' grabbed successfully!", targetRecord.Title)
+		setToastCookie(w, toastMsg, "success")
+		w.Header().Set("HX-Redirect", redirectTo)
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"msg": "Release '%s' grabbed successfully!", "type": "success"}}`, targetRecord.Title))
 		w.WriteHeader(http.StatusOK)
 	})
 
