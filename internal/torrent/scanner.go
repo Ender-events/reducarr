@@ -24,6 +24,8 @@ type Scanner struct {
 
 	TotalTorrents int
 	TotalClients  int
+
+	OnProgress func(client string, item string, done int, total int)
 }
 
 func NewScanner(client *arrs.Client, database *db.DB, logger *ui.ProgressLogger, mappings map[string][]fsutil.PathMapping) *Scanner {
@@ -72,6 +74,10 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 		return err
 	}
 
+	if s.OnProgress != nil {
+		s.OnProgress(inst.Name(), "Starting scan...", 0, len(torrents))
+	}
+
 	maxAddedOn := lastCheckpoint
 	scannedCount := 0
 
@@ -89,6 +95,9 @@ func (s *Scanner) ScanClient(ctx context.Context, inst arrs.TorrentInstance) err
 
 		s.TotalTorrents++
 		scannedCount++
+		if s.OnProgress != nil {
+			s.OnProgress(inst.Name(), t.Name, scannedCount, len(torrents))
+		}
 		msg := fmt.Sprintf("[%s] %s (%s)", inst.Name(), t.Name, t.Hash)
 		if s.Verbose {
 			s.UI.LogPermanent(msg)
