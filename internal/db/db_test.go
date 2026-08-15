@@ -131,3 +131,33 @@ func TestDB_GetDashboardStats_Empty(t *testing.T) {
 	assert.Equal(t, 0, stats.FailedActions)
 	assert.Equal(t, "Never", stats.LastScanTime)
 }
+
+func TestDB_ClearTable(t *testing.T) {
+	d, err := Open(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = d.Close() }()
+
+	// Add test data to scan_state
+	err = d.SetLastItemID("inst1", "100")
+	require.NoError(t, err)
+	err = d.SetLastItemID("inst2", "200")
+	require.NoError(t, err)
+
+	counts, err := d.GetTableCounts()
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), counts["scan_state"])
+
+	// Clear valid table
+	rows, err := d.ClearTable("scan_state")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), rows)
+
+	countsAfter, err := d.GetTableCounts()
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), countsAfter["scan_state"])
+
+	// Clear invalid table (SQL injection check / disallowed table)
+	_, err = d.ClearTable("non_existent_table; DROP TABLE users;")
+	assert.Error(t, err)
+}
+

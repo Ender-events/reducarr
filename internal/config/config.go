@@ -42,8 +42,9 @@ type AutomationConfig struct {
 }
 
 type WebUIConfig struct {
-	PageSize             int `mapstructure:"pageSize"`
-	MinRejectionSeverity int `mapstructure:"minRejectionSeverity"`
+	PageSize              int  `mapstructure:"pageSize"`
+	MinRejectionSeverity  int  `mapstructure:"minRejectionSeverity"`
+	EnableTroubleshooting bool `mapstructure:"enableTroubleshooting"`
 }
 
 type Config struct {
@@ -77,6 +78,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("automation.rateLimit", 6)
 	viper.SetDefault("webui.pageSize", 25)
 	viper.SetDefault("webui.minRejectionSeverity", math.MaxInt)
+	viper.SetDefault("webui.enableTroubleshooting", false)
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

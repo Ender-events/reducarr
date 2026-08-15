@@ -50,3 +50,8 @@ automation:
 
   # Maximum Arr searches triggered per hour
   rateLimit: 6
+
+webui:
+  pageSize: 25
+  # Enable troubleshooting page in WebUI (default false)
+  enableTroubleshooting: false

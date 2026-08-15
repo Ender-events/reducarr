@@ -1,8 +1,6 @@
 package web
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // BuildInfo holds build-time metadata displayed in the Settings page.
 type BuildInfo struct {
@@ -12,8 +10,8 @@ type BuildInfo struct {
 	BuildTime string
 }
 
-templ SettingsPage(username string, configContent string, progress ScanProgress, info BuildInfo) {
-	@Layout("Settings", username, nil) {
+templ SettingsPage(username string, configContent string, progress ScanProgress, info BuildInfo, showTroubleshooting ...bool) {
+	@Layout("Settings", username, nil, showTroubleshooting...) {
 		<div class="space-y-8 animate-in fade-in duration-500">
 			<div>
 				<h1 class="text-3xl font-bold mb-1 tracking-tight text-left">Settings</h1>
@@ -158,18 +156,15 @@ templ ScanControls(progress ScanProgress) {
 					</div>
 					<span class="badge badge-primary badge-sm font-mono font-bold">{ fmt.Sprintf("%d%%", progress.OverallPercent()) }</span>
 				</div>
-
 				<!-- Overall Progress Bar -->
 				<div class="w-full space-y-1">
 					<progress class="progress progress-primary w-full" value={ fmt.Sprintf("%d", progress.OverallPercent()) } max="100"></progress>
 				</div>
-
 				if progress.CurrentItem != "" {
 					<p class="text-xs text-base-content/70 font-mono truncate" title={ progress.CurrentItem }>
 						<span class="opacity-50">Current:</span> { progress.CurrentItem }
 					</p>
 				}
-
 				<!-- Category Breakdown (Torrents, Sonarr, Radarr) -->
 				<div class="space-y-2 pt-2 border-t border-base-300/50 text-xs">
 					<!-- Torrents Progress -->
@@ -188,7 +183,6 @@ templ ScanControls(progress ScanProgress) {
 						</div>
 						<progress class="progress progress-accent h-1.5 w-full" value={ fmt.Sprintf("%d", progress.TorrentsPercent()) } max="100"></progress>
 					</div>
-
 					<!-- Sonarr Progress -->
 					<div class="space-y-1">
 						<div class="flex justify-between items-center text-[11px]">
@@ -205,7 +199,6 @@ templ ScanControls(progress ScanProgress) {
 						</div>
 						<progress class="progress progress-info h-1.5 w-full" value={ fmt.Sprintf("%d", progress.SonarrPercent()) } max="100"></progress>
 					</div>
-
 					<!-- Radarr Progress -->
 					<div class="space-y-1">
 						<div class="flex justify-between items-center text-[11px]">
@@ -223,7 +216,6 @@ templ ScanControls(progress ScanProgress) {
 						<progress class="progress progress-warning h-1.5 w-full" value={ fmt.Sprintf("%d", progress.RadarrPercent()) } max="100"></progress>
 					</div>
 				</div>
-
 				if progress.TotalScanned > 0 || progress.TotalCandidate > 0 {
 					<div class="flex justify-between text-[11px] pt-1 opacity-70 border-t border-base-300/30">
 						<span>Scanned: <strong class="font-mono">{ fmt.Sprintf("%d", progress.TotalScanned) }</strong></span>
@@ -231,7 +223,6 @@ templ ScanControls(progress ScanProgress) {
 					</div>
 				}
 			</div>
-
 			<button disabled class="btn btn-block btn-disabled opacity-30 font-bold">Start Full Scan</button>
 			<button disabled class="btn btn-block btn-disabled opacity-30 font-bold">Start Incremental Scan</button>
 		</div>

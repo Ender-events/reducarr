@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"slices"
 
 	_ "modernc.org/sqlite"
 )
@@ -284,4 +285,45 @@ func (d *DB) AcquireScanLock(lockName string, pid int, holderType string, maxDur
 func (d *DB) ReleaseScanLock(lockName string) error {
 	_, err := d.Exec("DELETE FROM scan_locks WHERE lock_name = ?", lockName)
 	return err
+}
+
+var AllowedTables = []string{
+	"candidates",
+	"media_files",
+	"torrents",
+	"scan_state",
+	"reports",
+	"scan_locks",
+	"sessions",
+	"users",
+}
+
+func (d *DB) ClearTable(tableName string) (int64, error) {
+	if !slices.Contains(AllowedTables, tableName) {
+		return 0, fmt.Errorf("invalid or unauthorized table name: %q", tableName)
+	}
+
+	res, err := d.Exec(fmt.Sprintf("DELETE FROM %s", tableName))
+	if err != nil {
+		return 0, fmt.Errorf("clear table %s: %w", tableName, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, nil
+	}
+	return rows, nil
+}
+
+func (d *DB) GetTableCounts() (map[string]int64, error) {
+	counts := make(map[string]int64)
+	for _, t := range AllowedTables {
+		var count int64
+		err := d.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", t)).Scan(&count)
+		if err != nil {
+			return nil, fmt.Errorf("count table %s: %w", t, err)
+		}
+		counts[t] = count
+	}
+	return counts, nil
 }
