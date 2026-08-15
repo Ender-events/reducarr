@@ -296,6 +296,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 	// Settings
 	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Settings page")
+		cfg, _ := config.LoadConfig()
 		content, _ := config.GetConfigContent()
 		info := BuildInfo{
 			Version:   buildinfo.Version,
@@ -303,8 +304,61 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			GoVersion: buildinfo.GoVersion(),
 			BuildTime: buildinfo.BuildTime,
 		}
-		if err := SettingsPage(getUser(r), content, globalScanManager.IsRunning(), info).Render(r.Context(), w); err != nil {
+		if err := SettingsPage(getUser(r), content, globalScanManager.IsRunning(), info, cfg.WebUI.EnableTroubleshooting).Render(r.Context(), w); err != nil {
 			vlog("Failed to render settings page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Troubleshooting Page
+	mux.HandleFunc("GET /troubleshooting", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Accessing Troubleshooting page")
+		cfg, _ := config.LoadConfig()
+		if !cfg.WebUI.EnableTroubleshooting {
+			http.NotFound(w, r)
+			return
+		}
+		counts, err := database.GetTableCounts()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := TroubleshootingPage(getUser(r), counts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render troubleshooting page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Clear Table API
+	mux.HandleFunc("POST /api/troubleshooting/clear-table", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Executing clear-table action")
+		cfg, _ := config.LoadConfig()
+		if !cfg.WebUI.EnableTroubleshooting {
+			http.NotFound(w, r)
+			return
+		}
+		table := r.FormValue("table")
+		if table == "all" {
+			for _, t := range db.AllowedTables {
+				_, _ = database.ClearTable(t)
+			}
+			setToastCookie(w, "All database tables cleared successfully", "success")
+		} else {
+			rows, err := database.ClearTable(table)
+			if err != nil {
+				vlog("Error clearing table %s: %v", table, err)
+				http.Error(w, fmt.Sprintf("Failed to clear table %s: %v", table, err), http.StatusBadRequest)
+				return
+			}
+			setToastCookie(w, fmt.Sprintf("Table '%s' cleared (%d rows deleted)", table, rows), "success")
+		}
+		counts, err := database.GetTableCounts()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := TroubleshootingTableList(counts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render troubleshooting table list: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
