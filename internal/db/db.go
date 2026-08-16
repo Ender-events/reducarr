@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"slices"
 
 	_ "modernc.org/sqlite"
 )
@@ -298,12 +297,35 @@ var AllowedTables = []string{
 	"users",
 }
 
+var clearTableQueries = map[string]string{
+	"candidates":  "DELETE FROM candidates",
+	"media_files": "DELETE FROM media_files",
+	"torrents":    "DELETE FROM torrents",
+	"scan_state":  "DELETE FROM scan_state",
+	"reports":     "DELETE FROM reports",
+	"scan_locks":  "DELETE FROM scan_locks",
+	"sessions":    "DELETE FROM sessions",
+	"users":       "DELETE FROM users",
+}
+
+var countTableQueries = map[string]string{
+	"candidates":  "SELECT COUNT(*) FROM candidates",
+	"media_files": "SELECT COUNT(*) FROM media_files",
+	"torrents":    "SELECT COUNT(*) FROM torrents",
+	"scan_state":  "SELECT COUNT(*) FROM scan_state",
+	"reports":     "SELECT COUNT(*) FROM reports",
+	"scan_locks":  "SELECT COUNT(*) FROM scan_locks",
+	"sessions":    "SELECT COUNT(*) FROM sessions",
+	"users":       "SELECT COUNT(*) FROM users",
+}
+
 func (d *DB) ClearTable(tableName string) (int64, error) {
-	if !slices.Contains(AllowedTables, tableName) {
+	query, ok := clearTableQueries[tableName]
+	if !ok {
 		return 0, fmt.Errorf("invalid or unauthorized table name: %q", tableName)
 	}
 
-	res, err := d.Exec(fmt.Sprintf("DELETE FROM %s", tableName))
+	res, err := d.Exec(query)
 	if err != nil {
 		return 0, fmt.Errorf("clear table %s: %w", tableName, err)
 	}
@@ -318,8 +340,12 @@ func (d *DB) ClearTable(tableName string) (int64, error) {
 func (d *DB) GetTableCounts() (map[string]int64, error) {
 	counts := make(map[string]int64)
 	for _, t := range AllowedTables {
+		query, ok := countTableQueries[t]
+		if !ok {
+			continue
+		}
 		var count int64
-		err := d.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", t)).Scan(&count)
+		err := d.QueryRow(query).Scan(&count)
 		if err != nil {
 			return nil, fmt.Errorf("count table %s: %w", t, err)
 		}
