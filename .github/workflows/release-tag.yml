@@ -1,0 +1,73 @@
+name: Release Tag
+
+on:
+    push:
+        branches: ["main"]
+
+jobs:
+    tag:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            pull-requests: read
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+
+            - name: Detect release merge, create tag and GitHub Release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  MERGE_MSG=$(git log -1 --pretty=%s)
+                  echo "Commit message: $MERGE_MSG"
+
+                  if ! echo "$MERGE_MSG" | grep -qE "^Merge (pull request #[0-9]+ from .*/release/|branch 'release/)([0-9]+\.[0-9]+\.[0-9]+)"; then
+                      echo "Not a release merge, skipping."
+                      exit 0
+                  fi
+
+                  VERSION=$(echo "$MERGE_MSG" | grep -oE "(release/)([0-9]+\.[0-9]+\.[0-9]+)" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+                  TAG="v${VERSION}"
+                  echo "Detected release version: $TAG"
+
+                  # Create and push tag (idempotent)
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+
+                  if git rev-parse "$TAG" >/dev/null 2>&1; then
+                      echo "Tag $TAG already exists, skipping tag creation."
+                  else
+                      git tag "$TAG"
+                      git push origin "$TAG"
+                      echo "Tag $TAG created and pushed."
+                  fi
+
+                  # Check if a GitHub Release already exists for this tag
+                  if gh release view "$TAG" >/dev/null 2>&1; then
+                      echo "Release $TAG already exists, skipping release creation."
+                      exit 0
+                  fi
+
+                  # Try to fetch the PR body (works when merged via PR)
+                  PR_NUMBER=$(echo "$MERGE_MSG" | grep -oE "pull request #([0-9]+)" | grep -oE "[0-9]+")
+                  RELEASE_NOTES=""
+
+                  if [ -n "$PR_NUMBER" ]; then
+                      echo "Found PR #$PR_NUMBER, fetching body..."
+                      RELEASE_NOTES=$(gh pr view "$PR_NUMBER" --json body --jq '.body // ""')
+                  fi
+
+                  if [ -z "$RELEASE_NOTES" ]; then
+                      echo "No PR body found, using auto-generated notes."
+                      gh release create "$TAG" \
+                          --title "$TAG" \
+                          --generate-notes
+                  else
+                      echo "Creating release with PR body as notes."
+                      gh release create "$TAG" \
+                          --title "$TAG" \
+                          --notes "$RELEASE_NOTES"
+                  fi
