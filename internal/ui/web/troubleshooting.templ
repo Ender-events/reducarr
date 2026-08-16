@@ -1,0 +1,83 @@
+package web
+
+import (
+	"fmt"
+	"github.com/Ender-events/reducarr/internal/db"
+)
+
+templ TroubleshootingPage(username string, counts map[string]int64) {
+	@Layout("Troubleshooting", username, LayoutOptions{ShowTroubleshooting: true}) {
+		<div class="space-y-8">
+			<div>
+				<h1 class="text-3xl font-bold mb-2 flex items-center gap-3">
+					<svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+					</svg>
+					Troubleshooting & Maintenance
+				</h1>
+				<p class="text-base-content/60">Inspect internal database tables and clear data for debugging or resetting states.</p>
+			</div>
+
+			<!-- Warning Banner -->
+			<div class="alert alert-warning shadow-md border border-warning/30">
+				<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+				</svg>
+				<div>
+					<h3 class="font-bold">Caution: Destructive Actions</h3>
+					<div class="text-xs opacity-90">Clearing database tables will permanently delete scan checkpoints, candidates, or logs. Use with care.</div>
+				</div>
+			</div>
+
+			<!-- Table List & Controls -->
+			<div id="troubleshooting-container">
+				@TroubleshootingTableList(counts)
+			</div>
+		</div>
+	}
+}
+
+templ TroubleshootingTableList(counts map[string]int64) {
+	<div class="space-y-6">
+		<div class="flex items-center justify-between">
+			<h2 class="text-xl font-bold">Database Tables</h2>
+			<button
+				class="btn btn-error btn-sm"
+				hx-post="/api/troubleshooting/clear-table"
+				hx-vals='{"table": "all"}'
+				hx-target="#troubleshooting-container"
+				hx-confirm="Are you sure you want to clear ALL database tables?"
+			>
+				Clear All Tables
+			</button>
+		</div>
+
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+			for _, table := range db.AllowedTables {
+				<div class="card bg-base-100 shadow border border-base-300">
+					<div class="card-body p-5">
+						<div class="flex items-center justify-between">
+							<div>
+								<h3 class="card-title text-lg font-mono">{ table }</h3>
+								<span class="text-xs text-base-content/60">
+									{ fmt.Sprintf("%d records", counts[table]) }
+								</span>
+							</div>
+							<div class="card-actions">
+								<button
+									class="btn btn-outline btn-warning btn-xs"
+									hx-post="/api/troubleshooting/clear-table"
+									hx-vals={ fmt.Sprintf(`{"table": "%s"}`, table) }
+									hx-target="#troubleshooting-container"
+									hx-confirm={ fmt.Sprintf("Are you sure you want to clear the table '%s'?", table) }
+								>
+									Clear Table
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			}
+		</div>
+	</div>
+}
