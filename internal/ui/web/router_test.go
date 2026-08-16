@@ -136,7 +136,7 @@ func TestTroubleshootingRoutes(t *testing.T) {
 	wSettingsDisabled := httptest.NewRecorder()
 	router.ServeHTTP(wSettingsDisabled, reqSettingsDisabled)
 	assert.Equal(t, http.StatusOK, wSettingsDisabled.Code)
-	assert.NotContains(t, wSettingsDisabled.Body.String(), "Troubleshooting Page")
+	assert.NotContains(t, wSettingsDisabled.Body.String(), `href="/troubleshooting"`)
 
 	// Enable troubleshooting via viper
 	viper.Set("webui.enableTroubleshooting", true)
@@ -148,7 +148,7 @@ func TestTroubleshootingRoutes(t *testing.T) {
 	wSettingsEnabled := httptest.NewRecorder()
 	router.ServeHTTP(wSettingsEnabled, reqSettingsEnabled)
 	assert.Equal(t, http.StatusOK, wSettingsEnabled.Code)
-	assert.Contains(t, wSettingsEnabled.Body.String(), "Troubleshooting Page")
+	assert.Contains(t, wSettingsEnabled.Body.String(), `href="/troubleshooting"`)
 
 	reqEnabled, _ := http.NewRequest("GET", "/troubleshooting", nil)
 	reqEnabled.AddCookie(cookie)

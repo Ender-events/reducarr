@@ -118,7 +118,7 @@ templ ReleaseItem(username string, r ReleaseInfo, instance string, fileID int32)
 }
 
 templ OptimizationPage(username string, m db.MediaFileRecord, torrents []db.TorrentRecord, autoSearch bool) {
-	@Layout("Optimize "+m.Title, username, nil) {
+	@Layout("Optimize "+m.Title, username, LayoutOptions{}) {
 		<div class="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
 			<!-- Header -->
 			<div class="flex items-center justify-between">

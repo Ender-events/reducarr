@@ -71,7 +71,7 @@ templ SearchResults(username string, results []db.MediaFileRecord) {
 }
 
 templ SearchPage(username string) {
-	@Layout("Search", username, nil) {
+	@Layout("Search", username, LayoutOptions{}) {
 		<div class="space-y-6">
 			<div>
 				<h1 class="text-3xl font-bold mb-1 tracking-tight text-left">Search Library</h1>

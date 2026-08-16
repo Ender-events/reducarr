@@ -10,8 +10,8 @@ type BuildInfo struct {
 	BuildTime string
 }
 
-templ SettingsPage(username string, configContent string, progress ScanProgress, info BuildInfo, showTroubleshooting ...bool) {
-	@Layout("Settings", username, nil, showTroubleshooting...) {
+templ SettingsPage(username string, configContent string, progress ScanProgress, info BuildInfo, showTroubleshooting bool) {
+	@Layout("Settings", username, LayoutOptions{ShowTroubleshooting: showTroubleshooting}) {
 		<div class="space-y-8 animate-in fade-in duration-500">
 			<div>
 				<h1 class="text-3xl font-bold mb-1 tracking-tight text-left">Settings</h1>
