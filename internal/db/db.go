@@ -13,10 +13,17 @@ type DB struct {
 }
 
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn := path
+	if path != ":memory:" {
+		dsn = path + "?_busy_timeout=5000&_journal_mode=WAL"
+	}
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
+
+	db.SetMaxOpenConns(1)
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping database: %w", err)
@@ -277,4 +284,72 @@ func (d *DB) AcquireScanLock(lockName string, pid int, holderType string, maxDur
 func (d *DB) ReleaseScanLock(lockName string) error {
 	_, err := d.Exec("DELETE FROM scan_locks WHERE lock_name = ?", lockName)
 	return err
+}
+
+var AllowedTables = []string{
+	"candidates",
+	"media_files",
+	"torrents",
+	"scan_state",
+	"reports",
+	"scan_locks",
+	"sessions",
+	"users",
+}
+
+var clearTableQueries = map[string]string{
+	"candidates":  "DELETE FROM candidates",
+	"media_files": "DELETE FROM media_files",
+	"torrents":    "DELETE FROM torrents",
+	"scan_state":  "DELETE FROM scan_state",
+	"reports":     "DELETE FROM reports",
+	"scan_locks":  "DELETE FROM scan_locks",
+	"sessions":    "DELETE FROM sessions",
+	"users":       "DELETE FROM users",
+}
+
+var countTableQueries = map[string]string{
+	"candidates":  "SELECT COUNT(*) FROM candidates",
+	"media_files": "SELECT COUNT(*) FROM media_files",
+	"torrents":    "SELECT COUNT(*) FROM torrents",
+	"scan_state":  "SELECT COUNT(*) FROM scan_state",
+	"reports":     "SELECT COUNT(*) FROM reports",
+	"scan_locks":  "SELECT COUNT(*) FROM scan_locks",
+	"sessions":    "SELECT COUNT(*) FROM sessions",
+	"users":       "SELECT COUNT(*) FROM users",
+}
+
+func (d *DB) ClearTable(tableName string) (int64, error) {
+	query, ok := clearTableQueries[tableName]
+	if !ok {
+		return 0, fmt.Errorf("invalid or unauthorized table name: %q", tableName)
+	}
+
+	res, err := d.Exec(query)
+	if err != nil {
+		return 0, fmt.Errorf("clear table %s: %w", tableName, err)
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, nil
+	}
+	return rows, nil
+}
+
+func (d *DB) GetTableCounts() (map[string]int64, error) {
+	counts := make(map[string]int64)
+	for _, t := range AllowedTables {
+		query, ok := countTableQueries[t]
+		if !ok {
+			continue
+		}
+		var count int64
+		err := d.QueryRow(query).Scan(&count)
+		if err != nil {
+			return nil, fmt.Errorf("count table %s: %w", t, err)
+		}
+		counts[t] = count
+	}
+	return counts, nil
 }

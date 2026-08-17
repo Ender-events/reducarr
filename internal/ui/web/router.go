@@ -25,9 +25,98 @@ import (
 	"github.com/dustin/go-humanize"
 )
 
+type ScanProgress struct {
+	IsRunning      bool      `json:"is_running"`
+	ScanType       string    `json:"scan_type"` // "full" or "incremental"
+	Phase          string    `json:"phase"`     // "torrents", "sonarr", "radarr", "completed", "idle"
+	CurrentItem    string    `json:"current_item"`
+	TorrentsTotal  int       `json:"torrents_total"`
+	TorrentsDone   int       `json:"torrents_done"`
+	SonarrTotal    int       `json:"sonarr_total"`
+	SonarrDone     int       `json:"sonarr_done"`
+	RadarrTotal    int       `json:"radarr_total"`
+	RadarrDone     int       `json:"radarr_done"`
+	TotalScanned   int       `json:"total_scanned"`
+	TotalCandidate int       `json:"total_candidate"`
+	StartTime      time.Time `json:"start_time"`
+	EndTime        time.Time `json:"end_time"`
+}
+
+func (p ScanProgress) TorrentsPercent() int {
+	if p.TorrentsTotal <= 0 {
+		if p.Phase != "torrents" && p.Phase != "idle" {
+			return 100
+		}
+		return 0
+	}
+	pct := (p.TorrentsDone * 100) / p.TorrentsTotal
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
+func (p ScanProgress) SonarrPercent() int {
+	if p.SonarrTotal <= 0 {
+		if p.Phase == "radarr" || p.Phase == "completed" {
+			return 100
+		}
+		return 0
+	}
+	pct := (p.SonarrDone * 100) / p.SonarrTotal
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
+func (p ScanProgress) RadarrPercent() int {
+	if p.RadarrTotal <= 0 {
+		if p.Phase == "completed" {
+			return 100
+		}
+		return 0
+	}
+	pct := (p.RadarrDone * 100) / p.RadarrTotal
+	if pct > 100 {
+		return 100
+	}
+	return pct
+}
+
+func (p ScanProgress) OverallPercent() int {
+	if !p.IsRunning && p.Phase == "completed" {
+		return 100
+	}
+	if !p.IsRunning {
+		return 0
+	}
+
+	var pct float64
+	switch p.Phase {
+	case "torrents":
+		tPct := float64(p.TorrentsPercent()) / 100.0
+		pct = tPct * 25.0
+	case "sonarr":
+		sPct := float64(p.SonarrPercent()) / 100.0
+		pct = 25.0 + (sPct * 40.0)
+	case "radarr":
+		rPct := float64(p.RadarrPercent()) / 100.0
+		pct = 65.0 + (rPct * 35.0)
+	case "completed":
+		pct = 100.0
+	default:
+		pct = 0.0
+	}
+	if pct > 100.0 {
+		return 100
+	}
+	return int(pct)
+}
+
 type ScanManager struct {
-	mu        sync.Mutex
-	isRunning bool
+	mu       sync.Mutex
+	progress ScanProgress
 }
 
 // HealthResult holds health check information for a single service.
@@ -41,13 +130,68 @@ type HealthResult struct {
 func (m *ScanManager) IsRunning() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.isRunning
+	return m.progress.IsRunning
 }
 
-func (m *ScanManager) SetRunning(val bool) {
+func (m *ScanManager) StartScan(scanType string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.isRunning = val
+	m.progress = ScanProgress{
+		IsRunning: true,
+		ScanType:  scanType,
+		Phase:     "torrents",
+		StartTime: time.Now(),
+	}
+}
+
+func (m *ScanManager) SetPhase(phase string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.Phase = phase
+}
+
+func (m *ScanManager) UpdateTorrentProgress(client string, item string, done int, total int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.Phase = "torrents"
+	m.progress.CurrentItem = fmt.Sprintf("[%s] %s", client, item)
+	m.progress.TorrentsDone = done
+	m.progress.TorrentsTotal = total
+}
+
+func (m *ScanManager) UpdateScanProgress(phase string, item string, done int, total int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.Phase = phase
+	m.progress.CurrentItem = item
+	if phase == "sonarr" {
+		m.progress.SonarrDone = done
+		m.progress.SonarrTotal = total
+	} else if phase == "radarr" {
+		m.progress.RadarrDone = done
+		m.progress.RadarrTotal = total
+	}
+}
+
+func (m *ScanManager) UpdateSummary(scanned int, candidate int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.TotalScanned = scanned
+	m.progress.TotalCandidate = candidate
+}
+
+func (m *ScanManager) FinishScan() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.progress.IsRunning = false
+	m.progress.Phase = "completed"
+	m.progress.EndTime = time.Now()
+}
+
+func (m *ScanManager) GetProgress() ScanProgress {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.progress
 }
 
 var globalScanManager = &ScanManager{}
@@ -296,6 +440,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 	// Settings
 	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Settings page")
+		cfg, _ := config.LoadConfig()
 		content, _ := config.GetConfigContent()
 		info := BuildInfo{
 			Version:   buildinfo.Version,
@@ -303,8 +448,69 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			GoVersion: buildinfo.GoVersion(),
 			BuildTime: buildinfo.BuildTime,
 		}
-		if err := SettingsPage(getUser(r), content, globalScanManager.IsRunning(), info).Render(r.Context(), w); err != nil {
+		if err := SettingsPage(getUser(r), content, globalScanManager.GetProgress(), info, cfg.WebUI.EnableTroubleshooting).Render(r.Context(), w); err != nil {
 			vlog("Failed to render settings page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Troubleshooting Page
+	mux.HandleFunc("GET /troubleshooting", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Accessing Troubleshooting page")
+		cfg, _ := config.LoadConfig()
+		if !cfg.WebUI.EnableTroubleshooting {
+			http.NotFound(w, r)
+			return
+		}
+		counts, err := database.GetTableCounts()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := TroubleshootingPage(getUser(r), counts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render troubleshooting page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Clear Table API
+	mux.HandleFunc("POST /api/troubleshooting/clear-table", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Executing clear-table action")
+		cfg, _ := config.LoadConfig()
+		if !cfg.WebUI.EnableTroubleshooting {
+			http.NotFound(w, r)
+			return
+		}
+		table := r.FormValue("table")
+		if table == "all" {
+			for _, t := range db.AllowedTables {
+				_, _ = database.ClearTable(t)
+			}
+			setToastCookie(w, "All database tables cleared successfully", "success")
+		} else {
+			rows, err := database.ClearTable(table)
+			if err != nil {
+				vlog("Error clearing table %s: %v", table, err)
+				http.Error(w, fmt.Sprintf("Failed to clear table %s: %v", table, err), http.StatusBadRequest)
+				return
+			}
+			setToastCookie(w, fmt.Sprintf("Table '%s' cleared (%d rows deleted)", table, rows), "success")
+		}
+		counts, err := database.GetTableCounts()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := TroubleshootingTableList(counts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render troubleshooting table list: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Scan Status API for HTMX Live Polling
+	mux.HandleFunc("GET /api/scan/status", func(w http.ResponseWriter, r *http.Request) {
+		if err := ScanControls(globalScanManager.GetProgress()).Render(r.Context(), w); err != nil {
+			vlog("Failed to render scan status: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
@@ -387,17 +593,17 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			return
 		}
 
-		vlog("Starting manual %s scan", func() string {
-			if isIncremental {
-				return "incremental"
-			}
-			return "full"
-		}())
+		scanType := "full"
+		if isIncremental {
+			scanType = "incremental"
+		}
 
-		globalScanManager.SetRunning(true)
+		vlog("Starting manual %s scan", scanType)
+
+		globalScanManager.StartScan(scanType)
 
 		go func() {
-			defer globalScanManager.SetRunning(false)
+			defer globalScanManager.FinishScan()
 
 			cfg, _ := config.LoadConfig()
 			scorer := &scan.Scorer{}
@@ -419,6 +625,11 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			tScanner := torrent.NewScanner(client, database, uiLogger, nil)
 			tScanner.Verbose = verbose
 			tScanner.Incremental = isIncremental
+			tScanner.OnProgress = func(clientName string, item string, done int, total int) {
+				globalScanManager.UpdateTorrentProgress(clientName, item, done, total)
+			}
+
+			globalScanManager.SetPhase("torrents")
 			_ = tScanner.ScanAll(context.Background())
 
 			scanner := &scan.Scanner{
@@ -428,16 +639,22 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 				UI:      uiLogger,
 				Verbose: verbose,
 			}
+			scanner.OnProgress = func(phase string, item string, done int, total int) {
+				globalScanManager.UpdateScanProgress(phase, item, done, total)
+				globalScanManager.UpdateSummary(scanner.TotalScanned, scanner.TotalCandidate)
+			}
 
+			globalScanManager.SetPhase("sonarr")
 			if isIncremental {
 				_ = scanner.Incremental(context.Background())
 			} else {
 				_ = scanner.Run(context.Background())
 			}
+			globalScanManager.UpdateSummary(scanner.TotalScanned, scanner.TotalCandidate)
 			vlog("Manual scan complete")
 		}()
 
-		if err := ScanControls(true).Render(r.Context(), w); err != nil {
+		if err := ScanControls(globalScanManager.GetProgress()).Render(r.Context(), w); err != nil {
 			vlog("Failed to render scan controls: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}

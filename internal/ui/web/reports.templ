@@ -74,7 +74,7 @@ templ ReportItem(username string, r db.ReportRecord) {
 }
 
 templ ReportsPage(username string, reports []db.ReportRecord) {
-	@Layout("Reports", username, nil) {
+	@Layout("Reports", username, LayoutOptions{}) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>

@@ -164,7 +164,7 @@ templ SearchModal(title string, instance string, id int32, releases []ReleaseInf
 }
 
 templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, instances []InstanceInfo, page, pageSize, total int) {
-	@Layout("Candidates", username, instances) {
+	@Layout("Candidates", username, LayoutOptions{Instances: instances}) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
