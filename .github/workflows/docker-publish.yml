@@ -14,6 +14,18 @@ on:
         tags: ["v*.*.*"]
     pull_request:
         branches: ["main"]
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: "Tag/version to publish"
+                required: false
+                type: string
+    workflow_call:
+        inputs:
+            tag:
+                description: "Tag/version to publish"
+                required: false
+                type: string
 
 env:
     # Use docker.io for Docker Hub if empty
@@ -35,6 +47,7 @@ jobs:
             - name: Checkout repository
               uses: actions/checkout@v7
               with:
+                  ref: ${{ inputs.tag != '' && inputs.tag || github.ref }}
                   fetch-depth: 10
                   fetch-tags: true
 
@@ -81,6 +94,10 @@ jobs:
                       type=ref,event=branch
                       type=semver,pattern={{version}}
                       type=semver,pattern={{major}}.{{minor}}
+                      type=semver,pattern={{major}}
+                      type=semver,pattern={{version}},value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+                      type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+                      type=semver,pattern={{major}},value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
                       type=raw,value=${{ steps.rc_tag.outputs.tag }},enable=${{ startsWith(github.ref, 'refs/heads/release/') }}
 
             # Build and push Docker image with Buildx (don't push on PR)
@@ -110,3 +127,19 @@ jobs:
               # This step uses the identity token to provision an ephemeral certificate
               # against the sigstore community Fulcio instance.
               run: echo "${TAGS}" | xargs -I {} cosign sign --yes {}@${DIGEST}
+
+    cleanup:
+        runs-on: ubuntu-latest
+        if: github.event_name == 'schedule'
+        permissions:
+            packages: write
+        steps:
+            - name: Delete untagged GHCR versions older than 1 week
+              uses: snok/container-retention-policy@v3.0.0
+              with:
+                  account: ${{ github.repository_owner }}
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  image-names: ${{ github.event.repository.name }}
+                  image-tags: "!*"
+                  cut-off: 1 week ago UTC
+                  keep-n-most-recent: 0
