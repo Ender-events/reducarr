@@ -63,6 +63,10 @@ func (o *Orchestrator) deleteCandidateInternal(ctx context.Context, item db.Cand
 		WarningMessages: []string{},
 	}
 
+	if o.client == nil {
+		return report, o.failReport(report, fmt.Errorf("client is not initialized"))
+	}
+
 	// 1. Fetch associated torrents and ALL files they contain
 	torrents, err := o.db.GetTorrentsByInode(item.Inode)
 	if err != nil {

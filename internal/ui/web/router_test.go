@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -165,5 +166,36 @@ func TestTroubleshootingRoutes(t *testing.T) {
 	router.ServeHTTP(wClear, reqClear)
 	assert.Equal(t, http.StatusOK, wClear.Code)
 	assert.Contains(t, wClear.Body.String(), "Database Tables")
+}
+
+func TestRouter_NilClientHandling(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_nil_client.db")
+	database, err := db.Open(dbPath)
+	assert.NoError(t, err)
+	defer db.Close(database)
+
+	err = database.UpsertUser("admin", "secret")
+	assert.NoError(t, err)
+	token := "test-session-token-nil"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	assert.NoError(t, err)
+	cookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	router := NewRouter(database, nil, false)
+
+	// Triggering manual scan when client is nil should return 500 instead of panicking
+	reqScan, _ := http.NewRequest("POST", "/api/scan/full", nil)
+	reqScan.AddCookie(cookie)
+	wScan := httptest.NewRecorder()
+	router.ServeHTTP(wScan, reqScan)
+	assert.Equal(t, http.StatusInternalServerError, wScan.Code)
+
+	// Fetch releases when client is nil
+	reqReleases, _ := http.NewRequest("GET", "/api/candidates/sonarr_0/1/releases", nil)
+	reqReleases.AddCookie(cookie)
+	wReleases := httptest.NewRecorder()
+	router.ServeHTTP(wReleases, reqReleases)
+	assert.Equal(t, http.StatusInternalServerError, wReleases.Code)
 }
 

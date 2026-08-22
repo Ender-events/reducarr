@@ -588,6 +588,12 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Trigger Scan
 	triggerScan := func(w http.ResponseWriter, r *http.Request, isIncremental bool) {
+		if client == nil {
+			vlog("Cannot trigger scan: client is not initialized")
+			http.Error(w, "Client not initialized", http.StatusInternalServerError)
+			return
+		}
+
 		if globalScanManager.IsRunning() {
 			http.Error(w, "Scan already in progress", http.StatusConflict)
 			return
@@ -630,7 +636,9 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			}
 
 			globalScanManager.SetPhase("torrents")
-			_ = tScanner.ScanAll(context.Background())
+			if err := tScanner.ScanAll(context.Background()); err != nil {
+				vlog("Torrent scan failed: %v", err)
+			}
 
 			scanner := &scan.Scanner{
 				Client:  client,
@@ -645,10 +653,14 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			}
 
 			globalScanManager.SetPhase("sonarr")
+			var scanErr error
 			if isIncremental {
-				_ = scanner.Incremental(context.Background())
+				scanErr = scanner.Incremental(context.Background())
 			} else {
-				_ = scanner.Run(context.Background())
+				scanErr = scanner.Run(context.Background())
+			}
+			if scanErr != nil {
+				vlog("Scan failed: %v", scanErr)
 			}
 			globalScanManager.UpdateSummary(scanner.TotalScanned, scanner.TotalCandidate)
 			vlog("Manual scan complete")
@@ -748,6 +760,11 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Delete Candidate
 	mux.HandleFunc("DELETE /api/candidates/{instance}/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			http.Error(w, "Client not initialized", http.StatusInternalServerError)
+			return
+		}
+
 		instance := r.PathValue("instance")
 		idStr := r.PathValue("id")
 		id64, _ := strconv.ParseInt(idStr, 10, 32)
@@ -778,6 +795,11 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Fetch Releases for Optimization
 	mux.HandleFunc("GET /api/candidates/{instance}/{id}/releases", func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			http.Error(w, "Client not initialized", http.StatusInternalServerError)
+			return
+		}
+
 		instance := r.PathValue("instance")
 		idStr := r.PathValue("id")
 		id64, _ := strconv.ParseInt(idStr, 10, 32)
@@ -874,6 +896,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Grab Release
 	mux.HandleFunc("POST /api/candidates/{instance}/{id}/grab", func(w http.ResponseWriter, r *http.Request) {
+		if client == nil {
+			http.Error(w, "Client not initialized", http.StatusInternalServerError)
+			return
+		}
 		instance := r.PathValue("instance")
 		idStr := r.PathValue("id")
 		id64, _ := strconv.ParseInt(idStr, 10, 32)
