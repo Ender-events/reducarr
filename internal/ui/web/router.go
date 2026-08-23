@@ -263,15 +263,53 @@ func getRedirectPath(referer string) string {
 	return ""
 }
 
-func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler {
+func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.Handler {
 	startTime = time.Now()
 	mux := http.NewServeMux()
+
+	var clientMu sync.RWMutex
+	currentClient := initialClient
+
+	getClient := func() *arrs.Client {
+		clientMu.RLock()
+		defer clientMu.RUnlock()
+		return currentClient
+	}
+
+	setClient := func(c *arrs.Client) {
+		clientMu.Lock()
+		defer clientMu.Unlock()
+		currentClient = c
+	}
 
 	vlog := func(format string, v ...any) {
 		if verbose {
 			log.Printf("[WEB] "+format, v...)
 		}
 	}
+
+	config.Subscribe(func(diff config.ConfigDiff) {
+		if !diff.InstancesChanged {
+			return
+		}
+		vlog("Detected instance configuration changes, reloading clients...")
+		cfg := diff.NewConfig
+		if cfg == nil {
+			var err error
+			cfg, err = config.LoadConfig()
+			if err != nil {
+				vlog("ERROR loading config on reload: %v", err)
+				return
+			}
+		}
+		newClient, err := arrs.GetClient(context.Background(), cfg)
+		if err != nil {
+			vlog("ERROR reinitializing arrs client: %v", err)
+			return
+		}
+		setClient(newClient)
+		vlog("Client instances successfully updated")
+	})
 
 	// Health check - Simple liveness probe
 	mux.HandleFunc("GET /health/simple", func(w http.ResponseWriter, r *http.Request) {
@@ -281,7 +319,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 	// Health check - Detailed health information
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Detailed health check requested")
-		HealthCheckHandler(w, r, database, client)
+		HealthCheckHandler(w, r, database, getClient())
 	})
 
 	// Login page
@@ -560,11 +598,12 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 	// Health Check API
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Getting health status")
-		if client == nil {
+		c := getClient()
+		if c == nil {
 			fmt.Fprint(w, "<span class='text-error text-xs'>Client not initialized</span>")
 			return
 		}
-		results := client.HealthCheck(r.Context())
+		results := c.HealthCheck(r.Context())
 		// Convert to web.HealthResult for templ
 		webResults := make([]HealthResult, len(results))
 		for i, res := range results {
@@ -588,7 +627,8 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Trigger Scan
 	triggerScan := func(w http.ResponseWriter, r *http.Request, isIncremental bool) {
-		if client == nil {
+		c := getClient()
+		if c == nil {
 			vlog("Cannot trigger scan: client is not initialized")
 			http.Error(w, "Client not initialized", http.StatusInternalServerError)
 			return
@@ -628,7 +668,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 			uiLogger := ui.NewProgressLogger()
 
-			tScanner := torrent.NewScanner(client, database, uiLogger, nil)
+			tScanner := torrent.NewScanner(c, database, uiLogger, nil)
 			tScanner.Verbose = verbose
 			tScanner.Incremental = isIncremental
 			tScanner.OnProgress = func(clientName string, item string, done int, total int) {
@@ -641,7 +681,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			}
 
 			scanner := &scan.Scanner{
-				Client:  client,
+				Client:  c,
 				DB:      database,
 				Scorer:  scorer,
 				UI:      uiLogger,
@@ -760,7 +800,8 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Delete Candidate
 	mux.HandleFunc("DELETE /api/candidates/{instance}/{id}", func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
+		c := getClient()
+		if c == nil {
 			http.Error(w, "Client not initialized", http.StatusInternalServerError)
 			return
 		}
@@ -784,7 +825,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			return
 		}
 
-		orch := orchestrator.New(database, client, false, verbose)
+		orch := orchestrator.New(database, c, false, verbose)
 		if err := orch.DeleteCandidate(r.Context(), *target); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -795,7 +836,8 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Fetch Releases for Optimization
 	mux.HandleFunc("GET /api/candidates/{instance}/{id}/releases", func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
+		c := getClient()
+		if c == nil {
 			http.Error(w, "Client not initialized", http.StatusInternalServerError)
 			return
 		}
@@ -821,7 +863,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 		// TODO: move this logic into orchestrator ?
 		var releaseInfos []ReleaseInfo
 		if target.ArrType == "radarr" {
-			inst := client.FindRadarr(instance)
+			inst := c.FindRadarr(instance)
 			_ = inst.TriggerMovieSearch(r.Context(), target.ItemID)
 			releases, _ := inst.ListReleases(r.Context(), target.ItemID)
 			for _, rl := range releases {
@@ -848,7 +890,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 				})
 			}
 		} else {
-			inst := client.FindSonarr(instance)
+			inst := c.FindSonarr(instance)
 			episodes, _ := inst.ListEpisodes(r.Context(), target.ItemID)
 			var epID int32
 			for _, ep := range episodes {
@@ -896,7 +938,8 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 
 	// Grab Release
 	mux.HandleFunc("POST /api/candidates/{instance}/{id}/grab", func(w http.ResponseWriter, r *http.Request) {
-		if client == nil {
+		c := getClient()
+		if c == nil {
 			http.Error(w, "Client not initialized", http.StatusInternalServerError)
 			return
 		}
@@ -921,10 +964,10 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 			return
 		}
 
-		orch := orchestrator.New(database, client, false, verbose)
+		orch := orchestrator.New(database, c, false, verbose)
 		var err error
 		if targetRecord.ArrType == "radarr" {
-			inst := client.FindRadarr(instance)
+			inst := c.FindRadarr(instance)
 			releases, _ := inst.ListReleases(r.Context(), targetRecord.ItemID)
 			var selected *radarr.ReleaseResource
 			for i := range releases {
@@ -937,7 +980,7 @@ func NewRouter(database *db.DB, client *arrs.Client, verbose bool) http.Handler 
 				err = orch.UpgradeCandidate(r.Context(), *targetRecord, selected)
 			}
 		} else {
-			inst := client.FindSonarr(instance)
+			inst := c.FindSonarr(instance)
 			episodes, _ := inst.ListEpisodes(r.Context(), targetRecord.ItemID)
 			var epID int32
 			for _, ep := range episodes {
