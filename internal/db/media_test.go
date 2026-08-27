@@ -230,21 +230,21 @@ func TestDB_Candidates_ShowIgnored(t *testing.T) {
 	require.NoError(t, d.SetIgnoreCandidate(m2.ArrInstance, m2.FileID, true))
 
 	// When showIgnored = false
-	count, err := d.CountCandidatesFiltered("", false)
+	count, err := d.CountCandidatesFiltered("", false, "")
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	paginated, err := d.GetCandidatesWithMediaPaginated("", false, 10, 0)
+	paginated, err := d.GetCandidatesWithMediaPaginated("", false, "", 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, paginated, 1)
 	assert.Equal(t, int32(1), paginated[0].FileID)
 
 	// When showIgnored = true
-	countAll, err := d.CountCandidatesFiltered("", true)
+	countAll, err := d.CountCandidatesFiltered("", true, "")
 	require.NoError(t, err)
 	assert.Equal(t, 2, countAll)
 
-	paginatedAll, err := d.GetCandidatesWithMediaPaginated("", true, 10, 0)
+	paginatedAll, err := d.GetCandidatesWithMediaPaginated("", true, "", 10, 0)
 	require.NoError(t, err)
 	assert.Len(t, paginatedAll, 2)
 }

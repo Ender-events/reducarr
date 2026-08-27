@@ -145,7 +145,7 @@ func (d *DB) GetOptimizableEstimatedSavingsByType(arrType string) (int64, error)
 	return total, err
 }
 
-func (d *DB) CountCandidatesFiltered(instance string, showIgnored bool) (int, error) {
+func (d *DB) CountCandidatesFiltered(instance string, showIgnored bool, arrType string) (int, error) {
 	query := `
 		SELECT COUNT(*)
 		FROM candidates c
@@ -160,11 +160,15 @@ func (d *DB) CountCandidatesFiltered(instance string, showIgnored bool) (int, er
 		query += " AND m.arr_instance = ?"
 		args = append(args, instance)
 	}
+	if arrType != "" {
+		query += " AND m.arr_type = ?"
+		args = append(args, arrType)
+	}
 	var count int
 	return count, d.QueryRow(query, args...).Scan(&count)
 }
 
-func (d *DB) GetCandidatesWithMediaPaginated(instance string, showIgnored bool, limit, offset int) ([]CandidateRecord, error) {
+func (d *DB) GetCandidatesWithMediaPaginated(instance string, showIgnored bool, arrType string, limit, offset int) ([]CandidateRecord, error) {
 	query := `
 		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored
 		FROM candidates c
@@ -178,6 +182,10 @@ func (d *DB) GetCandidatesWithMediaPaginated(instance string, showIgnored bool, 
 	if instance != "" {
 		query += " AND m.arr_instance = ?"
 		args = append(args, instance)
+	}
+	if arrType != "" {
+		query += " AND m.arr_type = ?"
+		args = append(args, arrType)
 	}
 	query += " ORDER BY c.is_ignored DESC, m.size DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)

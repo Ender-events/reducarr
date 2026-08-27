@@ -407,6 +407,7 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 	mux.HandleFunc("GET /candidates", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Candidates page")
 		instanceFilter := r.URL.Query().Get("instance")
+		arrTypeFilter := r.URL.Query().Get("arr_type")
 		showIgnored := r.URL.Query().Get("show_ignored") == "1" || r.URL.Query().Get("show_ignored") == "true"
 		pageStr := r.URL.Query().Get("page")
 		page, _ := strconv.Atoi(pageStr)
@@ -420,19 +421,19 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		}
 		offset := (page - 1) * pageSize
 
-		total, err := database.CountCandidatesFiltered(instanceFilter, showIgnored)
+		total, err := database.CountCandidatesFiltered(instanceFilter, showIgnored, arrTypeFilter)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		candidates, err := database.GetCandidatesWithMediaPaginated(instanceFilter, showIgnored, pageSize, offset)
+		candidates, err := database.GetCandidatesWithMediaPaginated(instanceFilter, showIgnored, arrTypeFilter, pageSize, offset)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		instances := buildInstanceInfos()
 		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := CandidatesPage(getUser(r), candidates, instanceFilter, instances, page, pageSize, total, showIgnored, navStats).Render(r.Context(), w); err != nil {
+		if err := CandidatesPage(getUser(r), candidates, instanceFilter, arrTypeFilter, instances, page, pageSize, total, showIgnored, navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render candidates page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}

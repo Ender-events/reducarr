@@ -181,14 +181,18 @@ templ SearchModal(title string, instance string, id int32, releases []ReleaseInf
 	</dialog>
 }
 
-templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, instances []InstanceInfo, page, pageSize, total int, showIgnored bool, navStats NavStats) {
+templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, arrTypeFilter string, instances []InstanceInfo, page, pageSize, total int, showIgnored bool, navStats NavStats) {
 	@Layout("Candidates", username, LayoutOptions{Instances: instances, NavStats: navStats}) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
 					<h1 class="text-2xl sm:text-3xl font-bold mb-1">
 						Optimization Candidates
-						if activeInstance != "" {
+						if arrTypeFilter == "sonarr" {
+							<span class="text-base font-normal text-info ml-2">(Sonarr — series)</span>
+						} else if arrTypeFilter == "radarr" {
+							<span class="text-base font-normal text-warning ml-2">(Radarr — films)</span>
+						} else if activeInstance != "" {
 							<span class="text-base font-normal text-primary ml-2">({ activeInstance })</span>
 						}
 					</h1>
@@ -204,13 +208,16 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 									if activeInstance != "" {
 										u += "&instance=" + activeInstance
 									}
+									if arrTypeFilter != "" {
+										u += "&arr_type=" + arrTypeFilter
+									}
 									return u
 								}()) }
-								class="flex items-center gap-2 cursor-pointer"
+								class="flex items-center gap-2 cursor-pointer select-none"
 								title="Hide ignored items"
 							>
 								<span class="text-xs font-medium">Show ignored</span>
-								<input type="checkbox" class="toggle toggle-primary toggle-xs sm:toggle-sm" checked disabled/>
+								<input type="checkbox" class="toggle toggle-primary toggle-xs sm:toggle-sm pointer-events-none cursor-pointer" checked readonly tabindex="-1"/>
 							</a>
 						} else {
 							<a
@@ -219,13 +226,16 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 									if activeInstance != "" {
 										u += "&instance=" + activeInstance
 									}
+									if arrTypeFilter != "" {
+										u += "&arr_type=" + arrTypeFilter
+									}
 									return u
 								}()) }
-								class="flex items-center gap-2 cursor-pointer"
+								class="flex items-center gap-2 cursor-pointer select-none"
 								title="Show ignored items"
 							>
 								<span class="text-xs font-medium">Show ignored</span>
-								<input type="checkbox" class="toggle toggle-primary toggle-xs sm:toggle-sm" disabled/>
+								<input type="checkbox" class="toggle toggle-primary toggle-xs sm:toggle-sm pointer-events-none cursor-pointer" readonly tabindex="-1"/>
 							</a>
 						}
 					</div>
@@ -269,7 +279,7 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 			</div>
 
 			<!-- Pagination -->
-			@CandidatesPagination(page, pageSize, total, activeInstance, showIgnored)
+			@CandidatesPagination(page, pageSize, total, activeInstance, arrTypeFilter, showIgnored)
 		</div>
 
 		<!-- Container for dynamic modals -->
@@ -277,7 +287,7 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 	}
 }
 
-templ CandidatesPagination(page, pageSize, total int, instance string, showIgnored bool) {
+templ CandidatesPagination(page, pageSize, total int, instance string, arrType string, showIgnored bool) {
 	if total <= pageSize {
 		<!-- no pagination needed -->
 	} else {
@@ -293,7 +303,7 @@ templ CandidatesPagination(page, pageSize, total int, instance string, showIgnor
 				if page <= 1 {
 					<button class="join-item btn btn-sm" disabled>«</button>
 				} else {
-					<a href={ templ.SafeURL(paginationURL(page-1, instance, showIgnored)) } class="join-item btn btn-sm">«</a>
+					<a href={ templ.SafeURL(paginationURL(page-1, instance, arrType, showIgnored)) } class="join-item btn btn-sm">«</a>
 				}
 				<!-- Page numbers -->
 				for _, p := range paginationPages(page, totalPages) {
@@ -302,14 +312,14 @@ templ CandidatesPagination(page, pageSize, total int, instance string, showIgnor
 					} else if p == page {
 						<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", p) }</button>
 					} else {
-						<a href={ templ.SafeURL(paginationURL(p, instance, showIgnored)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", p) }</a>
+						<a href={ templ.SafeURL(paginationURL(p, instance, arrType, showIgnored)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", p) }</a>
 					}
 				}
 				<!-- Next -->
 				if page >= totalPages {
 					<button class="join-item btn btn-sm" disabled>»</button>
 				} else {
-					<a href={ templ.SafeURL(paginationURL(page+1, instance, showIgnored)) } class="join-item btn btn-sm">»</a>
+					<a href={ templ.SafeURL(paginationURL(page+1, instance, arrType, showIgnored)) } class="join-item btn btn-sm">»</a>
 				}
 			</div>
 		</div>

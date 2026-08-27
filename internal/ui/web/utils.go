@@ -94,11 +94,14 @@ func buildInstanceInfos() []InstanceInfo {
 	return out
 }
 
-// paginationURL builds a /candidates URL for the given page, optional instance filter, and showIgnored flag.
-func paginationURL(page int, instance string, showIgnored bool) string {
+// paginationURL builds a /candidates URL for the given page, optional instance filter, arrType, and showIgnored flag.
+func paginationURL(page int, instance string, arrType string, showIgnored bool) string {
 	u := fmt.Sprintf("/candidates?page=%d", page)
 	if instance != "" {
 		u += fmt.Sprintf("&instance=%s", instance)
+	}
+	if arrType != "" {
+		u += fmt.Sprintf("&arr_type=%s", arrType)
 	}
 	if showIgnored {
 		u += "&show_ignored=1"
