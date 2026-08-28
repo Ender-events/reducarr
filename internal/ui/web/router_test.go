@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetRedirectPath(t *testing.T) {
@@ -237,4 +239,116 @@ func TestRouter_DynamicClientReload(t *testing.T) {
 	router.ServeHTTP(wHealth2, reqHealth)
 	assert.NotContains(t, wHealth2.Body.String(), "Client not initialized")
 	assert.Contains(t, wHealth2.Body.String(), "Sonarr-Test")
+}
+
+func TestWebRouter_Dashboard_And_Filters(t *testing.T) {
+	database, err := db.Open(":memory:")
+	assert.NoError(t, err)
+	defer func() { _ = database.Close() }()
+
+	// Create user and session
+	assert.NoError(t, database.UpsertUser("admin", "password123"))
+	token := "test-token"
+	assert.NoError(t, database.CreateSession(token, "admin", time.Now().Add(time.Hour)))
+
+	// Insert test data: candidates & reports
+	m1 := db.MediaFileRecord{ArrInstance: "Sonarr-1", ArrType: "sonarr", ItemID: 1, FileID: 10, Title: "Episode 1", Size: 3 * 1024 * 1024 * 1024}
+	m2 := db.MediaFileRecord{ArrInstance: "Radarr-1", ArrType: "radarr", ItemID: 2, FileID: 20, Title: "Movie 1", Size: 6 * 1024 * 1024 * 1024}
+	assert.NoError(t, database.UpsertMediaFile(m1))
+	assert.NoError(t, database.UpsertMediaFile(m2))
+	assert.NoError(t, database.UpsertCandidate(m1.ArrInstance, m1.FileID, "reason 1"))
+	assert.NoError(t, database.UpsertCandidate(m2.ArrInstance, m2.FileID, "reason 2"))
+	assert.NoError(t, database.SetIgnoreCandidate(m2.ArrInstance, m2.FileID, true))
+
+	r1 := db.ReportRecord{ActionType: "UPGRADE", ItemTitle: "Movie Upgrade", Status: "SUCCESS"}
+	r2 := db.ReportRecord{ActionType: "UPGRADE", ItemTitle: "Failed Action", Status: "FAILED", ErrorMessage: "Error occurred", IsRead: false}
+	assert.NoError(t, database.InsertReport(r1))
+	assert.NoError(t, database.InsertReport(r2))
+
+	router := NewRouter(database, nil, false)
+
+	// Test GET / (Dashboard)
+	t.Run("GET / contains ignored and failed links", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, "/candidates?show_ignored=1")
+		assert.Contains(t, body, "/reports?status=FAILED")
+		assert.Contains(t, body, "System Health")
+		assert.Contains(t, body, `hx-get="/api/health"`)
+	})
+
+	// Test GET /candidates
+	t.Run("GET /candidates default excludes ignored", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/candidates", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, "Episode 1")
+		assert.NotContains(t, body, "Movie 1")
+	})
+
+	// Test GET /candidates?show_ignored=1
+	t.Run("GET /candidates?show_ignored=1 includes ignored", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/candidates?show_ignored=1", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, "Episode 1")
+		assert.Contains(t, body, "Movie 1")
+		assert.Contains(t, body, "Unignore")
+	})
+
+	// Test POST /api/candidates/{instance}/{id}/unignore
+	t.Run("POST /api/candidates/{instance}/{id}/unignore", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/candidates/Radarr-1/20/unignore", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.False(t, database.IsCandidateIgnored("Radarr-1", 20))
+	})
+
+	// Test GET /reports?status=FAILED
+	t.Run("GET /reports?status=FAILED filters reports", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/reports?status=FAILED", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, "Failed Action")
+		assert.NotContains(t, body, "Movie Upgrade")
+	})
+
+	// Test POST /api/reports/{id}/read
+	t.Run("POST /api/reports/{id}/read marks report as read", func(t *testing.T) {
+		reports, err := database.GetReportsFiltered("FAILED", 10, 0)
+		assert.NoError(t, err)
+		require.NotEmpty(t, reports)
+		reportID := reports[0].ID
+
+		req := httptest.NewRequest("POST", fmt.Sprintf("/api/reports/%d/read", reportID), nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		updated, err := database.GetReportByID(reportID)
+		assert.NoError(t, err)
+		assert.True(t, updated.IsRead)
+	})
 }

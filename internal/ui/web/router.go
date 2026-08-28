@@ -396,7 +396,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			FailedActions:     stats.FailedActions,
 			LastScanTime:      stats.LastScanTime,
 		}
-		if err := IndexPage(getUser(r), webStats).Render(r.Context(), w); err != nil {
+		navStats := buildNavStats(r.Context(), database, getClient())
+		if err := IndexPage(getUser(r), webStats, navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render index page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -406,6 +407,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 	mux.HandleFunc("GET /candidates", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Candidates page")
 		instanceFilter := r.URL.Query().Get("instance")
+		arrTypeFilter := r.URL.Query().Get("arr_type")
+		showIgnored := r.URL.Query().Get("show_ignored") == "1" || r.URL.Query().Get("show_ignored") == "true"
 		pageStr := r.URL.Query().Get("page")
 		page, _ := strconv.Atoi(pageStr)
 		if page < 1 {
@@ -418,18 +421,19 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		}
 		offset := (page - 1) * pageSize
 
-		total, err := database.CountCandidatesFiltered(instanceFilter)
+		total, err := database.CountCandidatesFiltered(instanceFilter, showIgnored, arrTypeFilter)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		candidates, err := database.GetCandidatesWithMediaPaginated(instanceFilter, pageSize, offset)
+		candidates, err := database.GetCandidatesWithMediaPaginated(instanceFilter, showIgnored, arrTypeFilter, pageSize, offset)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		instances := buildInstanceInfos()
-		if err := CandidatesPage(getUser(r), candidates, instanceFilter, instances, page, pageSize, total).Render(r.Context(), w); err != nil {
+		navStats := buildNavStats(r.Context(), database, getClient())
+		if err := CandidatesPage(getUser(r), candidates, instanceFilter, arrTypeFilter, instances, page, pageSize, total, showIgnored, navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render candidates page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -438,12 +442,14 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 	// Reports
 	mux.HandleFunc("GET /reports", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Reports page")
-		reports, err := database.GetReports(100, 0)
+		statusFilter := r.URL.Query().Get("status")
+		reports, err := database.GetReportsFiltered(statusFilter, 100, 0)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := ReportsPage(getUser(r), reports).Render(r.Context(), w); err != nil {
+		navStats := buildNavStats(r.Context(), database, getClient())
+		if err := ReportsPage(getUser(r), reports, statusFilter, navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render reports page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -460,7 +466,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			return
 		}
 
-		if err := ReportDetailPage(getUser(r), *report).Render(r.Context(), w); err != nil {
+		navStats := buildNavStats(r.Context(), database, getClient())
+		if err := ReportDetailPage(getUser(r), *report, navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render report detail page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -469,7 +476,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 	// Search
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Search page")
-		if err := SearchPage(getUser(r)).Render(r.Context(), w); err != nil {
+		navStats := buildNavStats(r.Context(), database, getClient())
+		if err := SearchPage(getUser(r), navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render search page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -486,7 +494,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			GoVersion: buildinfo.GoVersion(),
 			BuildTime: buildinfo.BuildTime,
 		}
-		if err := SettingsPage(getUser(r), content, globalScanManager.GetProgress(), info, cfg.WebUI.EnableTroubleshooting).Render(r.Context(), w); err != nil {
+		navStats := buildNavStats(r.Context(), database, getClient())
+		if err := SettingsPage(getUser(r), content, globalScanManager.GetProgress(), info, cfg.WebUI.EnableTroubleshooting, navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render settings page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -575,7 +584,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		torrents, _ := database.GetTorrentsByInode(media.Inode)
 
 		autoSearch := r.URL.Query().Get("search") == "1"
-		if err := OptimizationPage(getUser(r), *media, torrents, autoSearch).Render(r.Context(), w); err != nil {
+		navStats := buildNavStats(r.Context(), database, getClient())
+		if err := OptimizationPage(getUser(r), *media, torrents, autoSearch, navStats).Render(r.Context(), w); err != nil {
 			vlog("Failed to render optimization page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -792,6 +802,49 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 
 		vlog("Ignoring candidate: %s:%d", instance, id)
 		if err := database.SetIgnoreCandidate(instance, id, true); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Return updated CandidateItem for HTMX swap
+		candidate, err := database.GetCandidate(instance, id)
+		if err != nil || candidate == nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if err := CandidateItem(getUser(r), *candidate).Render(r.Context(), w); err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Unignore Candidate
+	mux.HandleFunc("POST /api/candidates/{instance}/{id}/unignore", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		idStr := r.PathValue("id")
+		id64, _ := strconv.ParseInt(idStr, 10, 32)
+		id := int32(id64)
+
+		vlog("Unignoring candidate: %s:%d", instance, id)
+		if err := database.SetIgnoreCandidate(instance, id, false); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Return updated CandidateItem for HTMX swap
+		candidate, err := database.GetCandidate(instance, id)
+		if err != nil || candidate == nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if err := CandidateItem(getUser(r), *candidate).Render(r.Context(), w); err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Mark Report as Read
+	mux.HandleFunc("POST /api/reports/{id}/read", func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+		id, _ := strconv.Atoi(idStr)
+		vlog("Marking report %d as read", id)
+		if err := database.MarkReportAsRead(id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

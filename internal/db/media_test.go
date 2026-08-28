@@ -152,3 +152,99 @@ func TestDB_GetMediaFilesBySeason(t *testing.T) {
 		assert.Empty(t, files)
 	})
 }
+
+func TestDB_GetOptimizableEstimatedSavings(t *testing.T) {
+	d, err := Open(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = d.Close() }()
+
+	// Film: 6 GB (> 4GB limit) -> excess: 6GB - 4GB = 2GB
+	film := MediaFileRecord{
+		ArrInstance: "Radarr-1",
+		ArrType:     "radarr",
+		ItemID:      1,
+		FileID:      10,
+		Title:       "Big Movie",
+		Size:        6 * 1024 * 1024 * 1024,
+	}
+	// Small Film: 3 GB (<= 4GB limit) -> excess: 0
+	smallFilm := MediaFileRecord{
+		ArrInstance: "Radarr-1",
+		ArrType:     "radarr",
+		ItemID:      2,
+		FileID:      20,
+		Title:       "Small Movie",
+		Size:        3 * 1024 * 1024 * 1024,
+	}
+	// Serie: 3 GB (> 2GB limit) -> excess: 3GB - 2GB = 1GB
+	serie := MediaFileRecord{
+		ArrInstance: "Sonarr-1",
+		ArrType:     "sonarr",
+		ItemID:      3,
+		FileID:      30,
+		Title:       "Big Episode",
+		Size:        3 * 1024 * 1024 * 1024,
+	}
+	// Ignored Serie: 5 GB -> should NOT be included because is_ignored = 1
+	ignoredSerie := MediaFileRecord{
+		ArrInstance: "Sonarr-1",
+		ArrType:     "sonarr",
+		ItemID:      4,
+		FileID:      40,
+		Title:       "Ignored Episode",
+		Size:        5 * 1024 * 1024 * 1024,
+	}
+
+	require.NoError(t, d.UpsertMediaFile(film))
+	require.NoError(t, d.UpsertMediaFile(smallFilm))
+	require.NoError(t, d.UpsertMediaFile(serie))
+	require.NoError(t, d.UpsertMediaFile(ignoredSerie))
+
+	require.NoError(t, d.UpsertCandidate(film.ArrInstance, film.FileID, "oversized"))
+	require.NoError(t, d.UpsertCandidate(smallFilm.ArrInstance, smallFilm.FileID, "reason"))
+	require.NoError(t, d.UpsertCandidate(serie.ArrInstance, serie.FileID, "oversized"))
+	require.NoError(t, d.UpsertCandidate(ignoredSerie.ArrInstance, ignoredSerie.FileID, "ignored"))
+	require.NoError(t, d.SetIgnoreCandidate(ignoredSerie.ArrInstance, ignoredSerie.FileID, true))
+
+	savings, err := d.GetOptimizableEstimatedSavings()
+	require.NoError(t, err)
+
+	// Expected: 2GB (film) + 0 (small film) + 1GB (serie) = 3GB
+	expected := int64(3 * 1024 * 1024 * 1024)
+	assert.Equal(t, expected, savings)
+}
+
+func TestDB_Candidates_ShowIgnored(t *testing.T) {
+	d, err := Open(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = d.Close() }()
+
+	m1 := MediaFileRecord{ArrInstance: "Sonarr-1", ArrType: "sonarr", ItemID: 1, FileID: 1, Title: "Ep 1", Size: 100}
+	m2 := MediaFileRecord{ArrInstance: "Sonarr-1", ArrType: "sonarr", ItemID: 2, FileID: 2, Title: "Ep 2", Size: 200}
+
+	require.NoError(t, d.UpsertMediaFile(m1))
+	require.NoError(t, d.UpsertMediaFile(m2))
+
+	require.NoError(t, d.UpsertCandidate(m1.ArrInstance, m1.FileID, "r1"))
+	require.NoError(t, d.UpsertCandidate(m2.ArrInstance, m2.FileID, "r2"))
+	require.NoError(t, d.SetIgnoreCandidate(m2.ArrInstance, m2.FileID, true))
+
+	// When showIgnored = false
+	count, err := d.CountCandidatesFiltered("", false, "")
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	paginated, err := d.GetCandidatesWithMediaPaginated("", false, "", 10, 0)
+	require.NoError(t, err)
+	assert.Len(t, paginated, 1)
+	assert.Equal(t, int32(1), paginated[0].FileID)
+
+	// When showIgnored = true
+	countAll, err := d.CountCandidatesFiltered("", true, "")
+	require.NoError(t, err)
+	assert.Equal(t, 2, countAll)
+
+	paginatedAll, err := d.GetCandidatesWithMediaPaginated("", true, "", 10, 0)
+	require.NoError(t, err)
+	assert.Len(t, paginatedAll, 2)
+}

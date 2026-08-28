@@ -109,35 +109,85 @@ func (d *DB) GetCandidatesWithMediaFiltered(instance string) ([]CandidateRecord,
 	return records, nil
 }
 
-func (d *DB) CountCandidatesFiltered(instance string) (int, error) {
+func (d *DB) GetOptimizableEstimatedSavings() (int64, error) {
+	var total int64
 	query := `
-		SELECT COUNT(*)
+		SELECT COALESCE(SUM(
+			CASE
+				WHEN m.arr_type = 'radarr' AND m.size > 4294967296 THEN m.size - 4294967296
+				WHEN m.arr_type = 'sonarr' AND m.size > 2147483648 THEN m.size - 2147483648
+				ELSE 0
+			END), 0)
 		FROM candidates c
 		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
 		WHERE c.is_ignored = 0
 	`
+	err := d.QueryRow(query).Scan(&total)
+	return total, err
+}
+
+// GetOptimizableEstimatedSavingsByType returns the estimated savings for a specific arr_type.
+// arrType should be "radarr" (films > 4GB threshold) or "sonarr" (episodes > 2GB threshold).
+func (d *DB) GetOptimizableEstimatedSavingsByType(arrType string) (int64, error) {
+	var total int64
+	query := `
+		SELECT COALESCE(SUM(
+			CASE
+				WHEN m.arr_type = 'radarr' AND m.size > 4294967296 THEN m.size - 4294967296
+				WHEN m.arr_type = 'sonarr' AND m.size > 2147483648 THEN m.size - 2147483648
+				ELSE 0
+			END), 0)
+		FROM candidates c
+		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		WHERE c.is_ignored = 0 AND m.arr_type = ?
+	`
+	err := d.QueryRow(query, arrType).Scan(&total)
+	return total, err
+}
+
+func (d *DB) CountCandidatesFiltered(instance string, showIgnored bool, arrType string) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM candidates c
+		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
+		WHERE 1=1
+	`
+	if !showIgnored {
+		query += " AND c.is_ignored = 0"
+	}
 	var args []any
 	if instance != "" {
 		query += " AND m.arr_instance = ?"
 		args = append(args, instance)
+	}
+	if arrType != "" {
+		query += " AND m.arr_type = ?"
+		args = append(args, arrType)
 	}
 	var count int
 	return count, d.QueryRow(query, args...).Scan(&count)
 }
 
-func (d *DB) GetCandidatesWithMediaPaginated(instance string, limit, offset int) ([]CandidateRecord, error) {
+func (d *DB) GetCandidatesWithMediaPaginated(instance string, showIgnored bool, arrType string, limit, offset int) ([]CandidateRecord, error) {
 	query := `
 		SELECT m.arr_instance, m.arr_type, m.item_id, m.file_id, m.path, m.title, m.inode, m.size, m.duration, m.quality, m.season_number, c.reason, c.is_ignored
 		FROM candidates c
 		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
-		WHERE c.is_ignored = 0
+		WHERE 1=1
 	`
+	if !showIgnored {
+		query += " AND c.is_ignored = 0"
+	}
 	var args []any
 	if instance != "" {
 		query += " AND m.arr_instance = ?"
 		args = append(args, instance)
 	}
-	query += " ORDER BY m.size DESC LIMIT ? OFFSET ?"
+	if arrType != "" {
+		query += " AND m.arr_type = ?"
+		args = append(args, arrType)
+	}
+	query += " ORDER BY c.is_ignored DESC, m.size DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 
 	rows, err := d.Query(query, args...)
