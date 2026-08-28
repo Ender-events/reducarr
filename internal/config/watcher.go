@@ -25,12 +25,19 @@ type ConfigDiff struct {
 	AutomationChanged bool
 	OldAutomation     AutomationConfig
 	NewAutomation     AutomationConfig
+
+	InstancesChanged   bool
+	SonarrChanged      bool
+	RadarrChanged      bool
+	QBittorrentChanged bool
+
+	NewConfig *Config
 }
 
 // HasChanges returns true if any configuration changed
 func (d *ConfigDiff) HasChanges() bool {
 	return d.DryRunChanged || d.AutoUpgradeChanged || d.ScheduleChanged ||
-		d.ScoringChanged || d.AutomationChanged
+		d.ScoringChanged || d.AutomationChanged || d.InstancesChanged
 }
 
 // ConfigCallback is a function that receives config diffs
@@ -95,7 +102,9 @@ func NotifyConfigChanged(oldCfg, newCfg *Config) {
 
 // computeDiff calculates the difference between two configs
 func computeDiff(oldCfg, newCfg *Config) ConfigDiff {
-	diff := ConfigDiff{}
+	diff := ConfigDiff{
+		NewConfig: newCfg,
+	}
 
 	// Check DryRun
 	if oldCfg.DryRun != newCfg.DryRun {
@@ -132,7 +141,66 @@ func computeDiff(oldCfg, newCfg *Config) ConfigDiff {
 		diff.NewAutomation = newCfg.Automation
 	}
 
+	// Check Sonarr instances
+	if !slicesEqualArr(oldCfg.Sonarr, newCfg.Sonarr) {
+		diff.SonarrChanged = true
+		diff.InstancesChanged = true
+	}
+
+	// Check Radarr instances
+	if !slicesEqualArr(oldCfg.Radarr, newCfg.Radarr) {
+		diff.RadarrChanged = true
+		diff.InstancesChanged = true
+	}
+
+	// Check QBittorrent instances
+	if !slicesEqualQBit(oldCfg.QBittorrent, newCfg.QBittorrent) {
+		diff.QBittorrentChanged = true
+		diff.InstancesChanged = true
+	}
+
 	return diff
+}
+
+func slicesEqualArr(a, b []ArrInstance) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || a[i].URL != b[i].URL || a[i].APIKey != b[i].APIKey {
+			return false
+		}
+		if len(a[i].PathMappings) != len(b[i].PathMappings) {
+			return false
+		}
+		for j := range a[i].PathMappings {
+			if a[i].PathMappings[j] != b[i].PathMappings[j] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func slicesEqualQBit(a, b []QBittorrentConfig) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || a[i].URL != b[i].URL || a[i].Username != b[i].Username ||
+			a[i].Password != b[i].Password || a[i].ReadOnly != b[i].ReadOnly {
+			return false
+		}
+		if len(a[i].PathMappings) != len(b[i].PathMappings) {
+			return false
+		}
+		for j := range a[i].PathMappings {
+			if a[i].PathMappings[j] != b[i].PathMappings[j] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // GetCurrentConfig returns the last known configuration

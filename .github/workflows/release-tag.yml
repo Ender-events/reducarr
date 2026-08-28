@@ -10,6 +10,10 @@ jobs:
         permissions:
             contents: write
             pull-requests: read
+        outputs:
+            created: ${{ steps.release.outputs.created }}
+            tag: ${{ steps.release.outputs.tag }}
+            version: ${{ steps.release.outputs.version }}
 
         steps:
             - name: Checkout repository
@@ -18,6 +22,7 @@ jobs:
                   fetch-depth: 0
 
             - name: Detect release merge, create tag and GitHub Release
+              id: release
               env:
                   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
@@ -26,12 +31,17 @@ jobs:
 
                   if ! echo "$MERGE_MSG" | grep -qE "^Merge (pull request #[0-9]+ from .*/release/|branch 'release/)([0-9]+\.[0-9]+\.[0-9]+)"; then
                       echo "Not a release merge, skipping."
+                      echo "created=false" >> "$GITHUB_OUTPUT"
                       exit 0
                   fi
 
                   VERSION=$(echo "$MERGE_MSG" | grep -oE "(release/)([0-9]+\.[0-9]+\.[0-9]+)" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
                   TAG="v${VERSION}"
                   echo "Detected release version: $TAG"
+
+                  echo "created=true" >> "$GITHUB_OUTPUT"
+                  echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+                  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
                   # Create and push tag (idempotent)
                   git config user.name "github-actions[bot]"
@@ -71,3 +81,15 @@ jobs:
                           --title "$TAG" \
                           --notes "$RELEASE_NOTES"
                   fi
+
+    docker:
+        needs: tag
+        if: needs.tag.outputs.created == 'true'
+        uses: ./.github/workflows/docker-publish.yml
+        with:
+            tag: ${{ needs.tag.outputs.tag }}
+        secrets: inherit
+        permissions:
+            contents: read
+            packages: write
+            id-token: write

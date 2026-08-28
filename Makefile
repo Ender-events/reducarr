@@ -9,7 +9,9 @@ BINARY_NAME ?= reducarr
 BINARY_DIR ?= ./cmd/reducarr
 
 # Build info injected at link time
-GIT_TAG    := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GIT_BRANCH := $(shell git branch --show-current 2>/dev/null)
+GIT_DESC   := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GIT_TAG    := $(if $(filter release/%,$(GIT_BRANCH)),$(shell echo '$(GIT_DESC)' | sed -E 's/^v[0-9]+\.[0-9]+(\.[0-9]+)?/v$(patsubst release/%,%,$(GIT_BRANCH))-RC/'),$(GIT_DESC))
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_PKG  := github.com/Ender-events/reducarr/internal/buildinfo

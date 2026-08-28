@@ -33,27 +33,79 @@ type Scanner struct {
 }
 
 func (s *Scanner) Run(ctx context.Context) error {
+	if s.Client == nil {
+		return fmt.Errorf("scanner client is not initialized")
+	}
+
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	for i, instance := range s.Client.Sonarr {
-		if err := s.scanSonarr(ctx, i, instance); err != nil {
-			if ctx.Err() != nil {
-				s.printSummary()
-				return nil
-			}
-			return err
+	type sonarrWork struct {
+		idx     int
+		inst    arrs.SonarrInstance
+		series  []sonarr.SeriesResource
+		authCtx context.Context
+		err     error
+	}
+	sonarrWorks := make([]sonarrWork, 0, len(s.Client.Sonarr))
+	for i, inst := range s.Client.Sonarr {
+		authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
+			"X-Api-Key": {Key: inst.ApiKey()},
+		})
+		series, _, err := inst.Api().SeriesAPI.ListSeries(authCtx).Execute()
+		sonarrWorks = append(sonarrWorks, sonarrWork{idx: i, inst: inst, series: series, authCtx: authCtx, err: err})
+	}
+	sonarrGrandTotal := 0
+	for _, w := range sonarrWorks {
+		if w.err == nil {
+			sonarrGrandTotal += len(w.series)
 		}
 	}
 
-	for i, instance := range s.Client.Radarr {
-		if err := s.scanRadarr(ctx, i, instance); err != nil {
+	sonarrOffset := 0
+	for _, w := range sonarrWorks {
+		if err := s.scanSonarr(ctx, w.idx, w.inst, w.series, w.authCtx, sonarrOffset, sonarrGrandTotal); err != nil {
 			if ctx.Err() != nil {
 				s.printSummary()
 				return nil
 			}
 			return err
 		}
+		sonarrOffset += len(w.series)
+	}
+
+	type radarrWork struct {
+		idx     int
+		inst    arrs.RadarrInstance
+		movies  []radarr.MovieResource
+		authCtx context.Context
+		err     error
+	}
+	radarrWorks := make([]radarrWork, 0, len(s.Client.Radarr))
+	for i, inst := range s.Client.Radarr {
+		authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
+			"X-Api-Key": {Key: inst.ApiKey()},
+		})
+		movies, _, err := inst.Api().MovieAPI.ListMovie(authCtx).Execute()
+		radarrWorks = append(radarrWorks, radarrWork{idx: i, inst: inst, movies: movies, authCtx: authCtx, err: err})
+	}
+	radarrGrandTotal := 0
+	for _, w := range radarrWorks {
+		if w.err == nil {
+			radarrGrandTotal += len(w.movies)
+		}
+	}
+
+	radarrOffset := 0
+	for _, w := range radarrWorks {
+		if err := s.scanRadarr(ctx, w.idx, w.inst, w.movies, w.authCtx, radarrOffset, radarrGrandTotal); err != nil {
+			if ctx.Err() != nil {
+				s.printSummary()
+				return nil
+			}
+			return err
+		}
+		radarrOffset += len(w.movies)
 	}
 
 	s.printSummary()
@@ -61,27 +113,107 @@ func (s *Scanner) Run(ctx context.Context) error {
 }
 
 func (s *Scanner) Incremental(ctx context.Context) error {
+	if s.Client == nil {
+		return fmt.Errorf("scanner client is not initialized")
+	}
+
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	for i, instance := range s.Client.Sonarr {
-		if err := s.incrementalSonarr(ctx, i, instance); err != nil {
-			if ctx.Err() != nil {
-				s.printSummary()
-				return nil
+	type sonarrHistWork struct {
+		idx     int
+		inst    arrs.SonarrInstance
+		history []historyEvent
+		err     error
+	}
+	sonarrHistWorks := make([]sonarrHistWork, 0, len(s.Client.Sonarr))
+	for i, inst := range s.Client.Sonarr {
+		history, err := inst.ListHistory(ctx, 100)
+		events := make([]historyEvent, 0, len(history))
+		for _, h := range history {
+			eventType := ""
+			if h.EventType != nil {
+				eventType = string(*h.EventType)
 			}
-			return err
+			itemID := int32(0)
+			if h.SeriesId != nil {
+				itemID = *h.SeriesId
+			}
+			events = append(events, historyEvent{
+				ID:          *h.Id,
+				EventType:   eventType,
+				Data:        h.Data,
+				ItemID:      itemID,
+				SourceTitle: arrs.GetString(h.SourceTitle),
+			})
+		}
+		sonarrHistWorks = append(sonarrHistWorks, sonarrHistWork{idx: i, inst: inst, history: events, err: err})
+	}
+	sonarrHistGrandTotal := 0
+	for _, w := range sonarrHistWorks {
+		if w.err == nil {
+			sonarrHistGrandTotal += len(w.history)
 		}
 	}
 
-	for i, instance := range s.Client.Radarr {
-		if err := s.incrementalRadarr(ctx, i, instance); err != nil {
+	sonarrOffset := 0
+	for _, w := range sonarrHistWorks {
+		if err := s.incrementalSonarr(ctx, w.idx, w.inst, w.history, sonarrOffset, sonarrHistGrandTotal); err != nil {
 			if ctx.Err() != nil {
 				s.printSummary()
 				return nil
 			}
 			return err
 		}
+		sonarrOffset += len(w.history)
+	}
+
+	type radarrHistWork struct {
+		idx     int
+		inst    arrs.RadarrInstance
+		history []historyEvent
+		err     error
+	}
+	radarrHistWorks := make([]radarrHistWork, 0, len(s.Client.Radarr))
+	for i, inst := range s.Client.Radarr {
+		history, err := inst.ListHistory(ctx, 100)
+		events := make([]historyEvent, 0, len(history))
+		for _, h := range history {
+			eventType := ""
+			if h.EventType != nil {
+				eventType = string(*h.EventType)
+			}
+			itemID := int32(0)
+			if h.MovieId != nil {
+				itemID = *h.MovieId
+			}
+			events = append(events, historyEvent{
+				ID:          *h.Id,
+				EventType:   eventType,
+				Data:        h.Data,
+				ItemID:      itemID,
+				SourceTitle: arrs.GetStringRadarr(h.SourceTitle),
+			})
+		}
+		radarrHistWorks = append(radarrHistWorks, radarrHistWork{idx: i, inst: inst, history: events, err: err})
+	}
+	radarrHistGrandTotal := 0
+	for _, w := range radarrHistWorks {
+		if w.err == nil {
+			radarrHistGrandTotal += len(w.history)
+		}
+	}
+
+	radarrOffset := 0
+	for _, w := range radarrHistWorks {
+		if err := s.incrementalRadarr(ctx, w.idx, w.inst, w.history, radarrOffset, radarrHistGrandTotal); err != nil {
+			if ctx.Err() != nil {
+				s.printSummary()
+				return nil
+			}
+			return err
+		}
+		radarrOffset += len(w.history)
 	}
 
 	s.printSummary()
@@ -96,7 +228,7 @@ func (s *Scanner) printSummary() {
 	s.UI.LogPermanent(fmt.Sprintf("  \033[31m✘ Candidates\033[0m: %d", s.TotalCandidate))
 }
 
-func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInstance) error {
+func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInstance, seriesList []sonarr.SeriesResource, authCtx context.Context, doneOffset int, grandTotal int) error {
 	instanceID := fmt.Sprintf("sonarr_%d", idx)
 	lastID := ""
 	if s.Resume {
@@ -107,17 +239,8 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 		}
 	}
 
-	authCtx := context.WithValue(ctx, sonarr.ContextAPIKeys, map[string]sonarr.APIKey{
-		"X-Api-Key": {Key: inst.ApiKey()},
-	})
-
-	seriesList, _, err := inst.Api().SeriesAPI.ListSeries(authCtx).Execute()
-	if err != nil {
-		return fmt.Errorf("get series: %w", err)
-	}
-
 	if s.OnProgress != nil {
-		s.OnProgress("sonarr", fmt.Sprintf("Listing %d series...", len(seriesList)), 0, len(seriesList))
+		s.OnProgress("sonarr", fmt.Sprintf("Listing %d series...", len(seriesList)), doneOffset, grandTotal)
 	}
 
 	if s.Verbose {
@@ -147,7 +270,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 
 		title := arrs.GetString(series.Title)
 		if s.OnProgress != nil {
-			s.OnProgress("sonarr", title, sIdx+1, len(seriesList))
+			s.OnProgress("sonarr", title, doneOffset+sIdx+1, grandTotal)
 		}
 
 		files, _, err := inst.Api().EpisodeFileAPI.ListEpisodeFile(authCtx).SeriesId(*series.Id).Execute()
@@ -251,7 +374,7 @@ func (s *Scanner) scanSonarr(ctx context.Context, idx int, inst arrs.SonarrInsta
 	return nil
 }
 
-func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInstance) error {
+func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInstance, movies []radarr.MovieResource, authCtx context.Context, doneOffset int, grandTotal int) error {
 	instanceID := fmt.Sprintf("radarr_%d", idx)
 	lastID := ""
 	if s.Resume {
@@ -262,17 +385,8 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 		}
 	}
 
-	authCtx := context.WithValue(ctx, radarr.ContextAPIKeys, map[string]radarr.APIKey{
-		"X-Api-Key": {Key: inst.ApiKey()},
-	})
-
-	movies, _, err := inst.Api().MovieAPI.ListMovie(authCtx).Execute()
-	if err != nil {
-		return fmt.Errorf("get movies: %w", err)
-	}
-
 	if s.OnProgress != nil {
-		s.OnProgress("radarr", fmt.Sprintf("Listing %d movies...", len(movies)), 0, len(movies))
+		s.OnProgress("radarr", fmt.Sprintf("Listing %d movies...", len(movies)), doneOffset, grandTotal)
 	}
 
 	sort.Slice(movies, func(i, j int) bool {
@@ -297,7 +411,7 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 
 		title := arrs.GetStringRadarr(movie.Title)
 		if s.OnProgress != nil {
-			s.OnProgress("radarr", title, mIdx+1, len(movies))
+			s.OnProgress("radarr", title, doneOffset+mIdx+1, grandTotal)
 		}
 
 		if arrs.GetBoolRadarr(movie.HasFile) && movie.MovieFile != nil {
@@ -328,7 +442,7 @@ func (s *Scanner) scanRadarr(ctx context.Context, idx int, inst arrs.RadarrInsta
 				quality = arrs.GetStringRadarr(movie.MovieFile.Quality.Quality.Name)
 			}
 
-			err = s.DB.UpsertMediaFile(db.MediaFileRecord{
+			err := s.DB.UpsertMediaFile(db.MediaFileRecord{
 				ArrInstance:  inst.Name(),
 				ArrType:      "radarr",
 				ItemID:       *movie.Id,
@@ -403,33 +517,7 @@ type fileMetadata struct {
 	SeasonNumber int32
 }
 
-func (s *Scanner) incrementalSonarr(ctx context.Context, idx int, inst arrs.SonarrInstance) error {
-	listHistory := func(ctx context.Context) ([]historyEvent, error) {
-		raw, err := inst.ListHistory(ctx, 100)
-		if err != nil {
-			return nil, err
-		}
-		events := make([]historyEvent, len(raw))
-		for i, h := range raw {
-			eventType := ""
-			if h.EventType != nil {
-				eventType = string(*h.EventType)
-			}
-			itemID := int32(0)
-			if h.SeriesId != nil {
-				itemID = *h.SeriesId
-			}
-			events[i] = historyEvent{
-				ID:          *h.Id,
-				EventType:   eventType,
-				Data:        h.Data,
-				ItemID:      itemID,
-				SourceTitle: arrs.GetString(h.SourceTitle),
-			}
-		}
-		return events, nil
-	}
-
+func (s *Scanner) incrementalSonarr(ctx context.Context, idx int, inst arrs.SonarrInstance, history []historyEvent, doneOffset int, grandTotal int) error {
 	getFile := func(ctx context.Context, fileID int32) (*fileMetadata, error) {
 		f, err := inst.GetEpisodeFile(ctx, fileID)
 		if err != nil {
@@ -457,36 +545,10 @@ func (s *Scanner) incrementalSonarr(ctx context.Context, idx int, inst arrs.Sona
 		}, nil
 	}
 
-	return s.runIncrementalScan(ctx, "sonarr", idx, inst.Name(), inst.PathMappings(), listHistory, getFile)
+	return s.runIncrementalScan(ctx, "sonarr", idx, inst.Name(), inst.PathMappings(), history, getFile, doneOffset, grandTotal)
 }
 
-func (s *Scanner) incrementalRadarr(ctx context.Context, idx int, inst arrs.RadarrInstance) error {
-	listHistory := func(ctx context.Context) ([]historyEvent, error) {
-		raw, err := inst.ListHistory(ctx, 100)
-		if err != nil {
-			return nil, err
-		}
-		events := make([]historyEvent, len(raw))
-		for i, h := range raw {
-			eventType := ""
-			if h.EventType != nil {
-				eventType = string(*h.EventType)
-			}
-			itemID := int32(0)
-			if h.MovieId != nil {
-				itemID = *h.MovieId
-			}
-			events[i] = historyEvent{
-				ID:          *h.Id,
-				EventType:   eventType,
-				Data:        h.Data,
-				ItemID:      itemID,
-				SourceTitle: arrs.GetStringRadarr(h.SourceTitle),
-			}
-		}
-		return events, nil
-	}
-
+func (s *Scanner) incrementalRadarr(ctx context.Context, idx int, inst arrs.RadarrInstance, history []historyEvent, doneOffset int, grandTotal int) error {
 	getFile := func(ctx context.Context, fileID int32) (*fileMetadata, error) {
 		f, err := inst.GetMovieFile(ctx, fileID)
 		if err != nil {
@@ -510,7 +572,7 @@ func (s *Scanner) incrementalRadarr(ctx context.Context, idx int, inst arrs.Rada
 		}, nil
 	}
 
-	return s.runIncrementalScan(ctx, "radarr", idx, inst.Name(), inst.PathMappings(), listHistory, getFile)
+	return s.runIncrementalScan(ctx, "radarr", idx, inst.Name(), inst.PathMappings(), history, getFile, doneOffset, grandTotal)
 }
 
 func (s *Scanner) runIncrementalScan(
@@ -519,21 +581,18 @@ func (s *Scanner) runIncrementalScan(
 	idx int,
 	instName string,
 	mappings []fsutil.PathMapping,
-	listHistory func(context.Context) ([]historyEvent, error),
+	history []historyEvent,
 	getFile func(context.Context, int32) (*fileMetadata, error),
+	doneOffset int,
+	grandTotal int,
 ) error {
 	instanceID := fmt.Sprintf("hist_%s_%d", arrType, idx)
 	lastID, _ := s.DB.GetLastItemID(instanceID)
 
 	s.UI.LogPermanent(fmt.Sprintf("\n--- Incremental Scan %s: %s ---", arrType, instName))
 
-	history, err := listHistory(ctx)
-	if err != nil {
-		return fmt.Errorf("list history: %w", err)
-	}
-
 	if s.OnProgress != nil {
-		s.OnProgress(arrType, fmt.Sprintf("Checking %d history items...", len(history)), 0, len(history))
+		s.OnProgress(arrType, fmt.Sprintf("Checking %d history items...", len(history)), doneOffset, grandTotal)
 	}
 
 	var latestID string
@@ -547,7 +606,7 @@ func (s *Scanner) runIncrementalScan(
 			if itemTitle == "" {
 				itemTitle = fmt.Sprintf("Event #%d", h.ID)
 			}
-			s.OnProgress(arrType, itemTitle, hIdx+1, len(history))
+			s.OnProgress(arrType, itemTitle, doneOffset+hIdx+1, grandTotal)
 		}
 		idStr := fmt.Sprintf("%d", h.ID)
 		if lastID != "" && idStr <= lastID {

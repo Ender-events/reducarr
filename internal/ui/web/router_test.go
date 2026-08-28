@@ -4,10 +4,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Ender-events/reducarr/internal/config"
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
@@ -167,3 +169,72 @@ func TestTroubleshootingRoutes(t *testing.T) {
 	assert.Contains(t, wClear.Body.String(), "Database Tables")
 }
 
+func TestRouter_NilClientHandling(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_nil_client.db")
+	database, err := db.Open(dbPath)
+	assert.NoError(t, err)
+	defer db.Close(database)
+
+	err = database.UpsertUser("admin", "secret")
+	assert.NoError(t, err)
+	token := "test-session-token-nil"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	assert.NoError(t, err)
+	cookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	router := NewRouter(database, nil, false)
+
+	// Triggering manual scan when client is nil should return 500 instead of panicking
+	reqScan, _ := http.NewRequest("POST", "/api/scan/full", nil)
+	reqScan.AddCookie(cookie)
+	wScan := httptest.NewRecorder()
+	router.ServeHTTP(wScan, reqScan)
+	assert.Equal(t, http.StatusInternalServerError, wScan.Code)
+
+	// Fetch releases when client is nil
+	reqReleases, _ := http.NewRequest("GET", "/api/candidates/sonarr_0/1/releases", nil)
+	reqReleases.AddCookie(cookie)
+	wReleases := httptest.NewRecorder()
+	router.ServeHTTP(wReleases, reqReleases)
+	assert.Equal(t, http.StatusInternalServerError, wReleases.Code)
+}
+
+func TestRouter_DynamicClientReload(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "test_dynamic.db")
+	database, err := db.Open(dbPath)
+	assert.NoError(t, err)
+	defer db.Close(database)
+
+	err = database.UpsertUser("admin", "secret")
+	assert.NoError(t, err)
+	token := "test-session-token-dyn"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	assert.NoError(t, err)
+	cookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	router := NewRouter(database, nil, false)
+
+	// Before reload: client is nil -> /api/health should say "Client not initialized"
+	reqHealth, _ := http.NewRequest("GET", "/api/health", nil)
+	reqHealth.AddCookie(cookie)
+	wHealth := httptest.NewRecorder()
+	router.ServeHTTP(wHealth, reqHealth)
+	assert.Contains(t, wHealth.Body.String(), "Client not initialized")
+
+	// Notify config changed with instances
+	oldCfg := &config.Config{}
+	newCfg := &config.Config{
+		Sonarr: []config.ArrInstance{
+			{Name: "Sonarr-Test", URL: "http://127.0.0.1:8989", APIKey: "dummy"},
+		},
+	}
+	config.NotifyConfigChanged(oldCfg, newCfg)
+
+	// After reload: client is now initialized with Sonarr-Test
+	wHealth2 := httptest.NewRecorder()
+	router.ServeHTTP(wHealth2, reqHealth)
+	assert.NotContains(t, wHealth2.Body.String(), "Client not initialized")
+	assert.Contains(t, wHealth2.Body.String(), "Sonarr-Test")
+}
