@@ -1,12 +1,15 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/Ender-events/reducarr/internal/config"
+	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/Ender-events/reducarr/pkg/arrs"
 )
 
 func safeID(instance string, id int32) string {
@@ -49,8 +52,31 @@ func (r ReleaseInfo) GetSize() int64 {
 }
 
 type InstanceInfo struct {
-	Name    string
-	ArrType string
+	Name             string
+	ArrType          string
+	OptimizableBytes int64 // estimated savings for this instance type (not per-instance, but grouped)
+}
+
+type NavStats struct {
+	OptimizableBytes     int64 // total (all types)
+	SonarrOptimizable    int64 // savings for sonarr episodes > 2GB
+	RadarrOptimizable    int64 // savings for radarr films > 4GB
+	UnreadErrors         int
+	DownloadingCount     int
+}
+
+func buildNavStats(ctx context.Context, database *db.DB, client *arrs.Client) NavStats {
+	var ns NavStats
+	if database != nil {
+		ns.OptimizableBytes, _ = database.GetOptimizableEstimatedSavings()
+		ns.SonarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("sonarr")
+		ns.RadarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("radarr")
+		ns.UnreadErrors, _ = database.GetUnreadErrorsCount()
+	}
+	if client != nil {
+		ns.DownloadingCount = client.GetTotalDownloadingCount(ctx)
+	}
+	return ns
 }
 
 func buildInstanceInfos() []InstanceInfo {
@@ -68,12 +94,16 @@ func buildInstanceInfos() []InstanceInfo {
 	return out
 }
 
-// paginationURL builds a /candidates URL for the given page and optional instance filter.
-func paginationURL(page int, instance string) string {
+// paginationURL builds a /candidates URL for the given page, optional instance filter, and showIgnored flag.
+func paginationURL(page int, instance string, showIgnored bool) string {
+	u := fmt.Sprintf("/candidates?page=%d", page)
 	if instance != "" {
-		return fmt.Sprintf("/candidates?page=%d&instance=%s", page, instance)
+		u += fmt.Sprintf("&instance=%s", instance)
 	}
-	return fmt.Sprintf("/candidates?page=%d", page)
+	if showIgnored {
+		u += "&show_ignored=1"
+	}
+	return u
 }
 
 // paginationPages returns the list of page numbers to display, with 0 representing an ellipsis.

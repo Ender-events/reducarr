@@ -254,6 +254,11 @@ func (m *MockTorrentInstance) DeleteTorrent(ctx context.Context, hash string, de
 	return nil
 }
 
+// GetDownloadingCount returns the number of downloading torrents
+func (m *MockTorrentInstance) GetDownloadingCount(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
 // MockClient is a mock implementation of arrs.Client for testing
 type MockClient struct {
 	Sonarr   []arrs.SonarrInstance

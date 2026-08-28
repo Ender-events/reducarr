@@ -72,6 +72,7 @@ type TorrentInstance interface {
 	PathMappings() []fsutil.PathMapping
 	GetFiles(ctx context.Context, hash string) ([]qbittorrent.TorrentFile, error)
 	DeleteTorrent(ctx context.Context, hash string, deleteFiles bool) error
+	GetDownloadingCount(ctx context.Context) (int, error)
 	IsReadOnly() bool
 }
 
@@ -310,6 +311,28 @@ func (t *torrentInst) GetFiles(ctx context.Context, hash string) ([]qbittorrent.
 
 func (t *torrentInst) DeleteTorrent(ctx context.Context, hash string, deleteFiles bool) error {
 	return t.api.DeleteTorrentsCtx(ctx, []string{hash}, deleteFiles)
+}
+
+func (t *torrentInst) GetDownloadingCount(ctx context.Context) (int, error) {
+	torrents, err := t.api.GetTorrentsCtx(ctx, qbittorrent.TorrentFilterOptions{Filter: "downloading"})
+	if err != nil {
+		return 0, err
+	}
+	return len(torrents), nil
+}
+
+func (c *Client) GetTotalDownloadingCount(ctx context.Context) int {
+	if c == nil {
+		return 0
+	}
+	total := 0
+	for _, t := range c.Torrents {
+		count, err := t.GetDownloadingCount(ctx)
+		if err == nil {
+			total += count
+		}
+	}
+	return total
 }
 
 func NewClient(sonarrConfigs, radarrConfigs []ArrInstance, qbitConfigs []QBitConfig) *Client {

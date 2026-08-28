@@ -106,6 +106,7 @@ func (d *DB) migrate() error {
 			status TEXT,
 			error_message TEXT,
 			warning_messages TEXT,
+			is_read BOOLEAN DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
 		`CREATE TABLE IF NOT EXISTS users (
@@ -139,6 +140,7 @@ func (d *DB) migrate() error {
 	_, _ = d.Exec("ALTER TABLE media_files ADD COLUMN season_number INTEGER")
 	_, _ = d.Exec("ALTER TABLE candidates ADD COLUMN is_ignored BOOLEAN DEFAULT 0")
 	_, _ = d.Exec("ALTER TABLE reports ADD COLUMN warning_messages TEXT")
+	_, _ = d.Exec("ALTER TABLE reports ADD COLUMN is_read BOOLEAN DEFAULT 0")
 
 	return nil
 }

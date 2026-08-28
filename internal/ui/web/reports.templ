@@ -9,7 +9,14 @@ import (
 )
 
 templ ReportItem(username string, r db.ReportRecord) {
-	<div class="card md:card-side bg-base-100 md:bg-transparent shadow-sm md:shadow-none border border-base-300 md:border-none hover:bg-base-200/50 transition-colors group">
+	<div
+		class={ "card md:card-side bg-base-100 md:bg-transparent shadow-sm md:shadow-none border border-base-300 md:border-none hover:bg-base-200/50 transition-colors group", templ.KV("border-l-4 border-l-error bg-error/5", r.Status == "FAILED" && !r.IsRead) }
+		if r.Status == "FAILED" && !r.IsRead {
+			hx-post={ fmt.Sprintf("/api/reports/%d/read", r.ID) }
+			hx-trigger="mouseenter once"
+			hx-swap="none"
+		}
+	>
 		<div class="card-body p-4 md:p-0 md:grid md:grid-cols-[150px_100px_1fr_100px_120px] md:items-center md:gap-4 w-full">
 
 			<!-- Date & Time -->
@@ -21,7 +28,12 @@ templ ReportItem(username string, r db.ReportRecord) {
 					} else if r.Status == "WARNING" {
 						<div class="badge badge-warning badge-soft badge-xs">Warning ({ len(r.WarningMessages) })</div>
 					} else {
-						<div class="badge badge-error badge-soft badge-xs">Failed</div>
+						<div class="badge badge-error badge-soft badge-xs">
+							if !r.IsRead {
+								<span class="inline-block w-1.5 h-1.5 rounded-full bg-error animate-pulse mr-1"></span>
+							}
+							Failed
+						</div>
 					}
 				</div>
 			</div>
@@ -35,8 +47,11 @@ templ ReportItem(username string, r db.ReportRecord) {
 
 			<!-- Item Title & Path -->
 			<div class="flex flex-col min-w-0 text-left">
-				<a href={ templ.SafeURL(fmt.Sprintf("/reports/%d", r.ID)) } class="font-bold truncate text-sm sm:text-base group-hover:text-primary transition-colors text-left">
-					{ r.ItemTitle }
+				<a href={ templ.SafeURL(fmt.Sprintf("/reports/%d", r.ID)) } class="font-bold truncate text-sm sm:text-base group-hover:text-primary transition-colors text-left flex items-center gap-1.5">
+					if r.Status == "FAILED" && !r.IsRead {
+						<span class="inline-block w-2 h-2 rounded-full bg-error shrink-0 animate-pulse" title="Unread failure"></span>
+					}
+					<span class="truncate">{ r.ItemTitle }</span>
 				</a>
 				<span class="text-[10px] sm:text-xs opacity-50 truncate text-left" title={ r.MainFilePath }>{ r.MainFilePath }</span>
 			</div>
@@ -48,7 +63,12 @@ templ ReportItem(username string, r db.ReportRecord) {
 				} else if r.Status == "WARNING" {
 					<div class="badge badge-warning badge-soft badge-sm" title={ strings.Join(r.WarningMessages, ", ") }>Warning ({ len(r.WarningMessages) })</div>
 				} else {
-					<div class="badge badge-error badge-soft badge-sm" title={ r.ErrorMessage }>Failed</div>
+					<div class="badge badge-error badge-soft badge-sm" title={ r.ErrorMessage }>
+						if !r.IsRead {
+							<span class="inline-block w-1.5 h-1.5 rounded-full bg-error animate-pulse mr-1"></span>
+						}
+						Failed
+					</div>
 				}
 			</div>
 
@@ -73,15 +93,35 @@ templ ReportItem(username string, r db.ReportRecord) {
 	</div>
 }
 
-templ ReportsPage(username string, reports []db.ReportRecord) {
-	@Layout("Reports", username, LayoutOptions{}) {
+templ ReportsPage(username string, reports []db.ReportRecord, currentStatus string, navStats NavStats) {
+	@Layout("Reports", username, LayoutOptions{NavStats: navStats}) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
 					<h1 class="text-2xl sm:text-3xl font-bold mb-1">Operation Reports</h1>
 					<p class="text-sm sm:text-base text-base-content/60">History of optimizations and actions performed.</p>
 				</div>
-				<div class="badge badge-outline badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d records", len(reports)) }</div>
+				<div class="flex flex-wrap items-center gap-3">
+					<!-- Select filter -->
+					<div class="flex items-center gap-2 bg-base-100 px-3 py-1.5 rounded-lg border border-base-300 shadow-sm">
+						<span class="text-xs font-medium opacity-70">Filter:</span>
+						<select
+							class="select select-xs sm:select-sm select-ghost font-medium"
+							onchange="window.location.href = '/reports' + (this.value ? '?status=' + this.value : '')"
+						>
+							<option value="" selected?={ currentStatus == "" || currentStatus == "ALL" }>All (Show all)</option>
+							<option value="SUCCESS" selected?={ currentStatus == "SUCCESS" }>Success (Success only)</option>
+							<option value="FAILED" selected?={ currentStatus == "FAILED" }>Failed (Failed only)</option>
+						</select>
+					</div>
+					if navStats.DownloadingCount > 0 {
+						<div class="badge badge-info badge-soft badge-md sm:badge-lg gap-1.5 whitespace-nowrap self-start sm:self-auto" title="Active torrent downloads in client">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+							<span>{ fmt.Sprintf("%d downloading", navStats.DownloadingCount) }</span>
+						</div>
+					}
+					<div class="badge badge-outline badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d records", len(reports)) }</div>
+				</div>
 			</div>
 
 			<div class="flex flex-col gap-4">

@@ -1,11 +1,15 @@
 package web
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/dustin/go-humanize"
+)
 
 // LayoutOptions holds optional display settings for the Layout template.
 type LayoutOptions struct {
 	Instances           []InstanceInfo
 	ShowTroubleshooting bool
+	NavStats            NavStats
 }
 
 templ Layout(title string, username string, opts LayoutOptions) {
@@ -79,37 +83,81 @@ templ Layout(title string, username string, opts LayoutOptions) {
 							<li>
 								if len(opts.Instances) > 0 {
 									<details open>
-										<summary class="gap-3 py-3 rounded-lg hover:bg-base-200">
-											<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-											Candidates
+										<summary class="flex items-center justify-between gap-3 py-3 rounded-lg hover:bg-base-200">
+											<div class="flex items-center gap-3">
+												<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+												<span>Candidates</span>
+											</div>
+											if opts.NavStats.OptimizableBytes > 0 {
+												<span class="badge badge-primary badge-sm font-bold font-mono mr-2" title="Estimated optimizable space">
+													~{ humanize.Bytes(uint64(opts.NavStats.OptimizableBytes)) }
+												</span>
+											}
 										</summary>
 										<ul class="mt-1 space-y-1 pl-4">
 											<li>
-												<a href="/candidates" class="py-2 text-xs rounded-lg hover:bg-base-200">
-													All Instances
+												<a href="/candidates" class="flex items-center justify-between py-2 text-xs rounded-lg hover:bg-base-200">
+													<span>All Instances</span>
+													if opts.NavStats.OptimizableBytes > 0 {
+														<span class="badge badge-primary badge-xs font-mono" title="Estimated optimizable space">
+															~{ humanize.Bytes(uint64(opts.NavStats.OptimizableBytes)) }
+														</span>
+													}
 												</a>
 											</li>
 											for _, inst := range opts.Instances {
 												<li>
 													<a href={ templ.SafeURL(fmt.Sprintf("/candidates?instance=%s", inst.Name)) } class="flex items-center justify-between py-2 text-xs rounded-lg hover:bg-base-200">
-														<span class="truncate">{ inst.Name }</span>
-														<span class="badge badge-ghost badge-xs uppercase font-bold text-[9px]">{ inst.ArrType }</span>
+														<span class="truncate flex items-center gap-1">
+															{ inst.Name }
+															<span class="badge badge-ghost badge-xs uppercase font-bold text-[9px]">{ inst.ArrType }</span>
+														</span>
+														if inst.ArrType == "sonarr" && opts.NavStats.SonarrOptimizable > 0 {
+															<span class="badge badge-info badge-xs font-mono" title="Estimated savings (series > 2GB)">
+																~{ humanize.Bytes(uint64(opts.NavStats.SonarrOptimizable)) }
+															</span>
+														} else if inst.ArrType == "radarr" && opts.NavStats.RadarrOptimizable > 0 {
+															<span class="badge badge-warning badge-xs font-mono" title="Estimated savings (films > 4GB)">
+																~{ humanize.Bytes(uint64(opts.NavStats.RadarrOptimizable)) }
+															</span>
+														}
 													</a>
 												</li>
 											}
 										</ul>
 									</details>
 								} else {
-									<a href="/candidates" class="flex items-center gap-3 py-3 rounded-lg hover:bg-base-200">
-										<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-										Candidates
+									<a href="/candidates" class="flex items-center justify-between py-3 rounded-lg hover:bg-base-200">
+										<div class="flex items-center gap-3">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+											<span>Candidates</span>
+										</div>
+										if opts.NavStats.OptimizableBytes > 0 {
+											<span class="badge badge-primary badge-sm font-bold font-mono" title="Estimated optimizable space">
+												~{ humanize.Bytes(uint64(opts.NavStats.OptimizableBytes)) }
+											</span>
+										}
 									</a>
 								}
 							</li>
 							<li>
-								<a href="/reports" class="flex items-center gap-3 py-3 rounded-lg hover:bg-base-200">
-									<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-									Reports
+								<a href="/reports" class="flex items-center justify-between py-3 rounded-lg hover:bg-base-200">
+									<div class="flex items-center gap-3">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+										<span>Reports</span>
+									</div>
+									<div class="flex items-center gap-1.5">
+										if opts.NavStats.DownloadingCount > 0 {
+											<span class="badge badge-info badge-soft badge-xs font-bold" title="Active torrent downloads">
+												{ fmt.Sprintf("%d dl", opts.NavStats.DownloadingCount) }
+											</span>
+										}
+										if opts.NavStats.UnreadErrors > 0 {
+											<span class="badge badge-error badge-xs font-bold animate-pulse" title="Unread failed actions">
+												{ fmt.Sprintf("%d", opts.NavStats.UnreadErrors) }
+											</span>
+										}
+									</div>
 								</a>
 							</li>
 							<li>
