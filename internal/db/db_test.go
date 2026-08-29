@@ -160,4 +160,3 @@ func TestDB_ClearTable(t *testing.T) {
 	_, err = d.ClearTable("non_existent_table; DROP TABLE users;")
 	assert.Error(t, err)
 }
-

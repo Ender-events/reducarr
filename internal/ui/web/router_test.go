@@ -351,4 +351,30 @@ func TestWebRouter_Dashboard_And_Filters(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, updated.IsRead)
 	})
+
+	// Test GET /reports?action=UPGRADE
+	t.Run("GET /reports?action=UPGRADE filters by action", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/reports?action=UPGRADE", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, "Movie Upgrade")
+		assert.Contains(t, body, "Reset")
+	})
+
+	// Test GET /reports?sort=item&order=asc
+	t.Run("GET /reports?sort=item&order=asc preserves filters and renders", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/reports?sort=item&order=asc&status=FAILED", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, "Failed Action")
+		assert.Contains(t, body, "order=desc") // Next sort toggle link
+	})
 }

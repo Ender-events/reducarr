@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -58,11 +59,11 @@ type InstanceInfo struct {
 }
 
 type NavStats struct {
-	OptimizableBytes     int64 // total (all types)
-	SonarrOptimizable    int64 // savings for sonarr episodes > 2GB
-	RadarrOptimizable    int64 // savings for radarr films > 4GB
-	UnreadErrors         int
-	DownloadingCount     int
+	OptimizableBytes  int64 // total (all types)
+	SonarrOptimizable int64 // savings for sonarr episodes > 2GB
+	RadarrOptimizable int64 // savings for radarr films > 4GB
+	UnreadErrors      int
+	DownloadingCount  int
 }
 
 func buildNavStats(ctx context.Context, database *db.DB, client *arrs.Client) NavStats {
@@ -145,4 +146,55 @@ func paginationPages(current, total int) []int {
 	}
 	addPage(total)
 	return pages
+}
+
+// reportFilterURL builds a /reports URL preserving all query filters and sorting options.
+func reportFilterURL(status string, action string, sortBy string, sortOrder string) string {
+	var params []string
+	if status != "" && status != "ALL" {
+		params = append(params, "status="+url.QueryEscape(status))
+	}
+	if action != "" && action != "ALL" {
+		params = append(params, "action="+url.QueryEscape(action))
+	}
+	if sortBy != "" {
+		params = append(params, "sort="+url.QueryEscape(sortBy))
+	}
+	if sortOrder != "" {
+		params = append(params, "order="+url.QueryEscape(sortOrder))
+	}
+	if len(params) == 0 {
+		return "/reports"
+	}
+	return "/reports?" + strings.Join(params, "&")
+}
+
+// reportDateSortURL calculates the next URL when clicking the Date column header.
+// 1st click: asc (oldest first), 2nd click: desc (newest first).
+func reportDateSortURL(status, action, currentSort, currentOrder string) string {
+	nextOrder := "asc"
+	if currentSort == "date" && currentOrder == "asc" {
+		nextOrder = "desc"
+	}
+	return reportFilterURL(status, action, "date", nextOrder)
+}
+
+// reportItemSortURL calculates the next URL when clicking the Item column header.
+// 1st click: asc (A-Z), 2nd click: desc (Z-A).
+func reportItemSortURL(status, action, currentSort, currentOrder string) string {
+	nextOrder := "asc"
+	if currentSort == "item" && currentOrder == "asc" {
+		nextOrder = "desc"
+	}
+	return reportFilterURL(status, action, "item", nextOrder)
+}
+
+// reportSavedSortURL calculates the next URL when clicking the Net Saved column header.
+// 1st click: desc (largest first), 2nd click: asc (smallest first).
+func reportSavedSortURL(status, action, currentSort, currentOrder string) string {
+	nextOrder := "desc"
+	if currentSort == "saved" && currentOrder == "desc" {
+		nextOrder = "asc"
+	}
+	return reportFilterURL(status, action, "saved", nextOrder)
 }
