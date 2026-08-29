@@ -443,13 +443,25 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 	mux.HandleFunc("GET /reports", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Reports page")
 		statusFilter := r.URL.Query().Get("status")
-		reports, err := database.GetReportsFiltered(statusFilter, 100, 0)
+		actionFilter := r.URL.Query().Get("action")
+		sortBy := r.URL.Query().Get("sort")
+		sortOrder := r.URL.Query().Get("order")
+
+		reports, err := database.GetReportsAdvanced(db.ReportFilter{
+			Status:    statusFilter,
+			Action:    actionFilter,
+			SortBy:    sortBy,
+			SortOrder: sortOrder,
+			Limit:     100,
+			Offset:    0,
+		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		actions, _ := database.GetDistinctReportActions()
 		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
-		if err := ReportsPage(getUser(r), reports, statusFilter, layoutOpts).Render(r.Context(), w); err != nil {
+		if err := ReportsPage(getUser(r), reports, statusFilter, actionFilter, sortBy, sortOrder, actions, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render reports page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -848,7 +860,14 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		report, err := database.GetReportByID(id)
+		if err != nil || report == nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if err := ReportItem(getUser(r), *report).Render(r.Context(), w); err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 	})
 
 	// Delete Candidate
