@@ -55,3 +55,6 @@ webui:
   pageSize: 25
   # Enable troubleshooting page in WebUI (default false)
   enableTroubleshooting: false
+  # Estimated savings threshold size for movies and episodes (default: 4GB for Radarr, 2GB for Sonarr)
+  radarrTargetSize: "4GB"
+  sonarrTargetSize: "2GB"

@@ -9,14 +9,19 @@ import (
 )
 
 templ CandidateItem(username string, c db.CandidateRecord) {
-	<div id={ safeID(c.ArrInstance, c.FileID) } class="card md:card-side bg-base-100 md:bg-transparent shadow-sm md:shadow-none border border-base-300 md:border-none hover:bg-base-200/50 transition-colors group">
+	<div id={ safeID(c.ArrInstance, c.FileID) } class={ "card md:card-side bg-base-100 md:bg-transparent shadow-sm md:shadow-none border border-base-300 md:border-none hover:bg-base-200/50 transition-colors group", templ.KV("opacity-75 bg-base-200/30", c.IsIgnored) }>
 		<div class="card-body p-4 md:p-0 md:grid md:grid-cols-[120px_1fr_100px_150px_120px] xl:grid-cols-[120px_1fr_100px_100px_150px_120px] md:items-center md:gap-4 w-full text-left">
 
 			<!-- Instance Info -->
 			<div class="flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start border-b border-base-300 md:border-none pb-2 md:pb-0 mb-2 md:mb-0">
 				<div class="flex flex-col">
 					<span class="font-medium text-xs sm:text-sm">{ c.ArrInstance }</span>
-					<span class="text-[10px] opacity-50 uppercase font-bold tracking-wider">{ c.ArrType }</span>
+					<div class="flex items-center gap-1">
+						<span class="text-[10px] opacity-50 uppercase font-bold tracking-wider">{ c.ArrType }</span>
+						if c.IsIgnored {
+							<span class="badge badge-accent badge-xs font-bold text-[9px]">Ignored</span>
+						}
+					</div>
 				</div>
 				<div class="md:hidden">
 					<div class="font-mono text-success font-bold text-sm">{ humanize.Bytes(uint64(c.Size)) }</div>
@@ -71,16 +76,29 @@ templ CandidateItem(username string, c db.CandidateRecord) {
 						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
 						<span class="md:hidden ml-2 text-xs">Delete</span>
 					</button>
-					<button
-						class="btn btn-sm btn-ghost join-item flex-1 md:flex-none"
-						title="Ignore"
-						hx-post={ fmt.Sprintf("/api/candidates/%s/%d/ignore", c.ArrInstance, c.FileID) }
-						hx-target={ "#" + safeID(c.ArrInstance, c.FileID) }
-						hx-swap="outerHTML"
-					>
-						<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-						<span class="md:hidden ml-2 text-xs">Ignore</span>
-					</button>
+					if c.IsIgnored {
+						<button
+							class="btn btn-sm btn-outline btn-accent join-item flex-1 md:flex-none md:btn-ghost md:text-accent"
+							title="Unignore"
+							hx-post={ fmt.Sprintf("/api/candidates/%s/%d/unignore", c.ArrInstance, c.FileID) }
+							hx-target={ "#" + safeID(c.ArrInstance, c.FileID) }
+							hx-swap="outerHTML"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+							<span class="md:hidden ml-2 text-xs">Unignore</span>
+						</button>
+					} else {
+						<button
+							class="btn btn-sm btn-ghost join-item flex-1 md:flex-none"
+							title="Ignore"
+							hx-post={ fmt.Sprintf("/api/candidates/%s/%d/ignore", c.ArrInstance, c.FileID) }
+							hx-target={ "#" + safeID(c.ArrInstance, c.FileID) }
+							hx-swap="outerHTML"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+							<span class="md:hidden ml-2 text-xs">Ignore</span>
+						</button>
+					}
 				</div>
 			</div>
 		</div>
@@ -163,22 +181,71 @@ templ SearchModal(title string, instance string, id int32, releases []ReleaseInf
 	</dialog>
 }
 
-templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, instances []InstanceInfo, page, pageSize, total int) {
-	@Layout("Candidates", username, LayoutOptions{Instances: instances}) {
+templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, arrTypeFilter string, page, pageSize, total int, showIgnored bool, opts LayoutOptions) {
+	@Layout("Candidates", username, opts) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
 					<h1 class="text-2xl sm:text-3xl font-bold mb-1">
 						Optimization Candidates
-						if activeInstance != "" {
+						if arrTypeFilter == "sonarr" {
+							<span class="text-base font-normal text-info ml-2">(Sonarr — series)</span>
+						} else if arrTypeFilter == "radarr" {
+							<span class="text-base font-normal text-warning ml-2">(Radarr — films)</span>
+						} else if activeInstance != "" {
 							<span class="text-base font-normal text-primary ml-2">({ activeInstance })</span>
 						}
 					</h1>
 					<p class="text-sm sm:text-base text-base-content/60">Identify and optimize oversized files in your library.</p>
 				</div>
-				<div class="flex items-center gap-2">
+				<div class="flex flex-wrap items-center gap-3">
+					<!-- Toggle show ignored files -->
+					<div class="flex items-center gap-2 bg-base-100 px-3 py-1.5 rounded-lg border border-base-300 shadow-sm">
+						if showIgnored {
+							<a
+								href={ templ.SafeURL(func() string {
+									u := "/candidates?page=1"
+									if activeInstance != "" {
+										u += "&instance=" + activeInstance
+									}
+									if arrTypeFilter != "" {
+										u += "&arr_type=" + arrTypeFilter
+									}
+									return u
+								}()) }
+								class="flex items-center gap-2 cursor-pointer select-none"
+								title="Hide ignored items"
+							>
+								<span class="text-xs font-medium">Show ignored</span>
+								<input type="checkbox" class="toggle toggle-primary toggle-xs sm:toggle-sm pointer-events-none cursor-pointer" checked readonly tabindex="-1"/>
+							</a>
+						} else {
+							<a
+								href={ templ.SafeURL(func() string {
+									u := "/candidates?page=1&show_ignored=1"
+									if activeInstance != "" {
+										u += "&instance=" + activeInstance
+									}
+									if arrTypeFilter != "" {
+										u += "&arr_type=" + arrTypeFilter
+									}
+									return u
+								}()) }
+								class="flex items-center gap-2 cursor-pointer select-none"
+								title="Show ignored items"
+							>
+								<span class="text-xs font-medium">Show ignored</span>
+								<input type="checkbox" class="toggle toggle-primary toggle-xs sm:toggle-sm pointer-events-none cursor-pointer" readonly tabindex="-1"/>
+							</a>
+						}
+					</div>
 					if activeInstance != "" {
-						<a href="/candidates" class="btn btn-xs btn-ghost text-error">Clear Filter</a>
+						<a href={ templ.SafeURL(func() string {
+							if showIgnored {
+								return "/candidates?show_ignored=1"
+							}
+							return "/candidates"
+						}()) } class="btn btn-xs btn-ghost text-error">Clear Instance Filter</a>
 					}
 					<div class="badge badge-primary badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d items", total) }</div>
 				</div>
@@ -212,7 +279,7 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 			</div>
 
 			<!-- Pagination -->
-			@CandidatesPagination(page, pageSize, total, activeInstance)
+			@CandidatesPagination(page, pageSize, total, activeInstance, arrTypeFilter, showIgnored)
 		</div>
 
 		<!-- Container for dynamic modals -->
@@ -220,7 +287,7 @@ templ CandidatesPage(username string, candidates []db.CandidateRecord, activeIns
 	}
 }
 
-templ CandidatesPagination(page, pageSize, total int, instance string) {
+templ CandidatesPagination(page, pageSize, total int, instance string, arrType string, showIgnored bool) {
 	if total <= pageSize {
 		<!-- no pagination needed -->
 	} else {
@@ -236,7 +303,7 @@ templ CandidatesPagination(page, pageSize, total int, instance string) {
 				if page <= 1 {
 					<button class="join-item btn btn-sm" disabled>«</button>
 				} else {
-					<a href={ templ.SafeURL(paginationURL(page-1, instance)) } class="join-item btn btn-sm">«</a>
+					<a href={ templ.SafeURL(paginationURL(page-1, instance, arrType, showIgnored)) } class="join-item btn btn-sm">«</a>
 				}
 				<!-- Page numbers -->
 				for _, p := range paginationPages(page, totalPages) {
@@ -245,14 +312,14 @@ templ CandidatesPagination(page, pageSize, total int, instance string) {
 					} else if p == page {
 						<button class="join-item btn btn-sm btn-active">{ fmt.Sprintf("%d", p) }</button>
 					} else {
-						<a href={ templ.SafeURL(paginationURL(p, instance)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", p) }</a>
+						<a href={ templ.SafeURL(paginationURL(p, instance, arrType, showIgnored)) } class="join-item btn btn-sm">{ fmt.Sprintf("%d", p) }</a>
 					}
 				}
 				<!-- Next -->
 				if page >= totalPages {
 					<button class="join-item btn btn-sm" disabled>»</button>
 				} else {
-					<a href={ templ.SafeURL(paginationURL(page+1, instance)) } class="join-item btn btn-sm">»</a>
+					<a href={ templ.SafeURL(paginationURL(page+1, instance, arrType, showIgnored)) } class="join-item btn btn-sm">»</a>
 				}
 			</div>
 		</div>

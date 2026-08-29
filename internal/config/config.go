@@ -6,7 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/Ender-events/reducarr/pkg/fsutil"
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/viper"
 )
 
@@ -42,9 +44,33 @@ type AutomationConfig struct {
 }
 
 type WebUIConfig struct {
-	PageSize              int  `mapstructure:"pageSize"`
-	MinRejectionSeverity  int  `mapstructure:"minRejectionSeverity"`
-	EnableTroubleshooting bool `mapstructure:"enableTroubleshooting"`
+	PageSize              int    `mapstructure:"pageSize"`
+	MinRejectionSeverity  int    `mapstructure:"minRejectionSeverity"`
+	EnableTroubleshooting bool   `mapstructure:"enableTroubleshooting"`
+	RadarrTargetSize      string `mapstructure:"radarrTargetSize"`
+	SonarrTargetSize      string `mapstructure:"sonarrTargetSize"`
+}
+
+func (c *WebUIConfig) GetRadarrTargetSizeBytes() int64 {
+	if c.RadarrTargetSize == "" {
+		return db.DefaultRadarrTargetSize
+	}
+	bytes, err := humanize.ParseBytes(c.RadarrTargetSize)
+	if err != nil || bytes == 0 {
+		return db.DefaultRadarrTargetSize
+	}
+	return int64(bytes)
+}
+
+func (c *WebUIConfig) GetSonarrTargetSizeBytes() int64 {
+	if c.SonarrTargetSize == "" {
+		return db.DefaultSonarrTargetSize
+	}
+	bytes, err := humanize.ParseBytes(c.SonarrTargetSize)
+	if err != nil || bytes == 0 {
+		return db.DefaultSonarrTargetSize
+	}
+	return int64(bytes)
 }
 
 type Config struct {
@@ -79,6 +105,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault("webui.pageSize", 25)
 	viper.SetDefault("webui.minRejectionSeverity", math.MaxInt)
 	viper.SetDefault("webui.enableTroubleshooting", false)
+	viper.SetDefault("webui.radarrTargetSize", "4GB")
+	viper.SetDefault("webui.sonarrTargetSize", "2GB")
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {

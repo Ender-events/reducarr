@@ -1,12 +1,16 @@
 package web
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/Ender-events/reducarr/internal/config"
+	"github.com/Ender-events/reducarr/internal/db"
+	"github.com/Ender-events/reducarr/pkg/arrs"
 )
 
 func safeID(instance string, id int32) string {
@@ -49,8 +53,37 @@ func (r ReleaseInfo) GetSize() int64 {
 }
 
 type InstanceInfo struct {
-	Name    string
-	ArrType string
+	Name             string
+	ArrType          string
+	OptimizableBytes int64 // estimated savings for this instance type (not per-instance, but grouped)
+}
+
+type NavStats struct {
+	OptimizableBytes  int64 // total (all types)
+	SonarrOptimizable int64 // savings for sonarr episodes > 2GB
+	RadarrOptimizable int64 // savings for radarr films > 4GB
+	UnreadErrors      int
+	DownloadingCount  int
+}
+
+func buildNavStats(ctx context.Context, database *db.DB, client *arrs.Client) NavStats {
+	var ns NavStats
+	if database != nil {
+		var radarrLimit, sonarrLimit int64
+		cfg, _ := config.LoadConfig()
+		if cfg != nil {
+			radarrLimit = cfg.WebUI.GetRadarrTargetSizeBytes()
+			sonarrLimit = cfg.WebUI.GetSonarrTargetSizeBytes()
+		}
+		ns.OptimizableBytes, _ = database.GetOptimizableEstimatedSavings(radarrLimit, sonarrLimit)
+		ns.SonarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("sonarr", sonarrLimit)
+		ns.RadarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("radarr", radarrLimit)
+		ns.UnreadErrors, _ = database.GetUnreadErrorsCount()
+	}
+	if client != nil {
+		ns.DownloadingCount = client.GetTotalDownloadingCount(ctx)
+	}
+	return ns
 }
 
 func buildInstanceInfos() []InstanceInfo {
@@ -68,12 +101,32 @@ func buildInstanceInfos() []InstanceInfo {
 	return out
 }
 
-// paginationURL builds a /candidates URL for the given page and optional instance filter.
-func paginationURL(page int, instance string) string {
-	if instance != "" {
-		return fmt.Sprintf("/candidates?page=%d&instance=%s", page, instance)
+func buildLayoutOptions(ctx context.Context, database *db.DB, client *arrs.Client) LayoutOptions {
+	cfg, _ := config.LoadConfig()
+	showTroubleshooting := false
+	if cfg != nil {
+		showTroubleshooting = cfg.WebUI.EnableTroubleshooting
 	}
-	return fmt.Sprintf("/candidates?page=%d", page)
+	return LayoutOptions{
+		Instances:           buildInstanceInfos(),
+		ShowTroubleshooting: showTroubleshooting,
+		NavStats:            buildNavStats(ctx, database, client),
+	}
+}
+
+// paginationURL builds a /candidates URL for the given page, optional instance filter, arrType, and showIgnored flag.
+func paginationURL(page int, instance string, arrType string, showIgnored bool) string {
+	u := fmt.Sprintf("/candidates?page=%d", page)
+	if instance != "" {
+		u += fmt.Sprintf("&instance=%s", instance)
+	}
+	if arrType != "" {
+		u += fmt.Sprintf("&arr_type=%s", arrType)
+	}
+	if showIgnored {
+		u += "&show_ignored=1"
+	}
+	return u
 }
 
 // paginationPages returns the list of page numbers to display, with 0 representing an ellipsis.
@@ -112,4 +165,55 @@ func paginationPages(current, total int) []int {
 	}
 	addPage(total)
 	return pages
+}
+
+// reportFilterURL builds a /reports URL preserving all query filters and sorting options.
+func reportFilterURL(status string, action string, sortBy string, sortOrder string) string {
+	var params []string
+	if status != "" && status != "ALL" {
+		params = append(params, "status="+url.QueryEscape(status))
+	}
+	if action != "" && action != "ALL" {
+		params = append(params, "action="+url.QueryEscape(action))
+	}
+	if sortBy != "" {
+		params = append(params, "sort="+url.QueryEscape(sortBy))
+	}
+	if sortOrder != "" {
+		params = append(params, "order="+url.QueryEscape(sortOrder))
+	}
+	if len(params) == 0 {
+		return "/reports"
+	}
+	return "/reports?" + strings.Join(params, "&")
+}
+
+// reportDateSortURL calculates the next URL when clicking the Date column header.
+// 1st click: asc (oldest first), 2nd click: desc (newest first).
+func reportDateSortURL(status, action, currentSort, currentOrder string) string {
+	nextOrder := "asc"
+	if currentSort == "date" && currentOrder == "asc" {
+		nextOrder = "desc"
+	}
+	return reportFilterURL(status, action, "date", nextOrder)
+}
+
+// reportItemSortURL calculates the next URL when clicking the Item column header.
+// 1st click: asc (A-Z), 2nd click: desc (Z-A).
+func reportItemSortURL(status, action, currentSort, currentOrder string) string {
+	nextOrder := "asc"
+	if currentSort == "item" && currentOrder == "asc" {
+		nextOrder = "desc"
+	}
+	return reportFilterURL(status, action, "item", nextOrder)
+}
+
+// reportSavedSortURL calculates the next URL when clicking the Net Saved column header.
+// 1st click: desc (largest first), 2nd click: asc (smallest first).
+func reportSavedSortURL(status, action, currentSort, currentOrder string) string {
+	nextOrder := "desc"
+	if currentSort == "saved" && currentOrder == "desc" {
+		nextOrder = "asc"
+	}
+	return reportFilterURL(status, action, "saved", nextOrder)
 }
