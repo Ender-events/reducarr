@@ -396,8 +396,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			FailedActions:     stats.FailedActions,
 			LastScanTime:      stats.LastScanTime,
 		}
-		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := IndexPage(getUser(r), webStats, navStats).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		if err := IndexPage(getUser(r), webStats, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render index page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -431,9 +431,9 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		instances := buildInstanceInfos()
-		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := CandidatesPage(getUser(r), candidates, instanceFilter, arrTypeFilter, instances, page, pageSize, total, showIgnored, navStats).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		layoutOpts.CandidatesOpen = true
+		if err := CandidatesPage(getUser(r), candidates, instanceFilter, arrTypeFilter, page, pageSize, total, showIgnored, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render candidates page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -448,8 +448,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := ReportsPage(getUser(r), reports, statusFilter, navStats).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		if err := ReportsPage(getUser(r), reports, statusFilter, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render reports page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -466,8 +466,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			return
 		}
 
-		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := ReportDetailPage(getUser(r), *report, navStats).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		if err := ReportDetailPage(getUser(r), *report, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render report detail page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -476,8 +476,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 	// Search
 	mux.HandleFunc("GET /search", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Search page")
-		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := SearchPage(getUser(r), navStats).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		if err := SearchPage(getUser(r), layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render search page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -486,7 +486,6 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 	// Settings
 	mux.HandleFunc("GET /settings", func(w http.ResponseWriter, r *http.Request) {
 		vlog("Accessing Settings page")
-		cfg, _ := config.LoadConfig()
 		content, _ := config.GetConfigContent()
 		info := BuildInfo{
 			Version:   buildinfo.Version,
@@ -494,8 +493,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			GoVersion: buildinfo.GoVersion(),
 			BuildTime: buildinfo.BuildTime,
 		}
-		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := SettingsPage(getUser(r), content, globalScanManager.GetProgress(), info, cfg.WebUI.EnableTroubleshooting, navStats).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		if err := SettingsPage(getUser(r), content, globalScanManager.GetProgress(), info, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render settings page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -514,7 +513,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := TroubleshootingPage(getUser(r), counts).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		if err := TroubleshootingPage(getUser(r), counts, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render troubleshooting page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
@@ -584,8 +584,8 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		torrents, _ := database.GetTorrentsByInode(media.Inode)
 
 		autoSearch := r.URL.Query().Get("search") == "1"
-		navStats := buildNavStats(r.Context(), database, getClient())
-		if err := OptimizationPage(getUser(r), *media, torrents, autoSearch, navStats).Render(r.Context(), w); err != nil {
+		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
+		if err := OptimizationPage(getUser(r), *media, torrents, autoSearch, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render optimization page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}

@@ -5,8 +5,8 @@ import (
 	"github.com/Ender-events/reducarr/internal/db"
 )
 
-templ TroubleshootingPage(username string, counts map[string]int64) {
-	@Layout("Troubleshooting", username, LayoutOptions{ShowTroubleshooting: true}) {
+templ TroubleshootingPage(username string, counts map[string]int64, opts LayoutOptions) {
+	@Layout("Troubleshooting", username, opts) {
 		<div class="space-y-8">
 			<div>
 				<h1 class="text-3xl font-bold mb-2 flex items-center gap-3">

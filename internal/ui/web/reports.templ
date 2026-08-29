@@ -93,8 +93,8 @@ templ ReportItem(username string, r db.ReportRecord) {
 	</div>
 }
 
-templ ReportsPage(username string, reports []db.ReportRecord, currentStatus string, navStats NavStats) {
-	@Layout("Reports", username, LayoutOptions{NavStats: navStats}) {
+templ ReportsPage(username string, reports []db.ReportRecord, currentStatus string, opts LayoutOptions) {
+	@Layout("Reports", username, opts) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>
@@ -114,10 +114,10 @@ templ ReportsPage(username string, reports []db.ReportRecord, currentStatus stri
 							<option value="FAILED" selected?={ currentStatus == "FAILED" }>Failed (Failed only)</option>
 						</select>
 					</div>
-					if navStats.DownloadingCount > 0 {
+					if opts.NavStats.DownloadingCount > 0 {
 						<div class="badge badge-info badge-soft badge-md sm:badge-lg gap-1.5 whitespace-nowrap self-start sm:self-auto" title="Active torrent downloads in client">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-							<span>{ fmt.Sprintf("%d downloading", navStats.DownloadingCount) }</span>
+							<span>{ fmt.Sprintf("%d downloading", opts.NavStats.DownloadingCount) }</span>
 						</div>
 					}
 					<div class="badge badge-outline badge-md sm:badge-lg whitespace-nowrap self-start sm:self-auto">{ fmt.Sprintf("%d records", len(reports)) }</div>

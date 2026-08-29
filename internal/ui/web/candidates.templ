@@ -181,8 +181,8 @@ templ SearchModal(title string, instance string, id int32, releases []ReleaseInf
 	</dialog>
 }
 
-templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, arrTypeFilter string, instances []InstanceInfo, page, pageSize, total int, showIgnored bool, navStats NavStats) {
-	@Layout("Candidates", username, LayoutOptions{Instances: instances, NavStats: navStats}) {
+templ CandidatesPage(username string, candidates []db.CandidateRecord, activeInstance string, arrTypeFilter string, page, pageSize, total int, showIgnored bool, opts LayoutOptions) {
+	@Layout("Candidates", username, opts) {
 		<div class="space-y-6">
 			<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
 				<div>

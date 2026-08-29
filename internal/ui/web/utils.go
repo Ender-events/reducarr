@@ -94,6 +94,20 @@ func buildInstanceInfos() []InstanceInfo {
 	return out
 }
 
+func buildLayoutOptions(ctx context.Context, database *db.DB, client *arrs.Client) LayoutOptions {
+	cfg, _ := config.LoadConfig()
+	showTroubleshooting := false
+	if cfg != nil {
+		showTroubleshooting = cfg.WebUI.EnableTroubleshooting
+	}
+	return LayoutOptions{
+		Instances:           buildInstanceInfos(),
+		ShowTroubleshooting: showTroubleshooting,
+		NavStats:            buildNavStats(ctx, database, client),
+	}
+}
+
+
 // paginationURL builds a /candidates URL for the given page, optional instance filter, arrType, and showIgnored flag.
 func paginationURL(page int, instance string, arrType string, showIgnored bool) string {
 	u := fmt.Sprintf("/candidates?page=%d", page)

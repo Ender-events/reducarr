@@ -10,6 +10,7 @@ type LayoutOptions struct {
 	Instances           []InstanceInfo
 	ShowTroubleshooting bool
 	NavStats            NavStats
+	CandidatesOpen      bool
 }
 
 templ Layout(title string, username string, opts LayoutOptions) {
@@ -84,7 +85,7 @@ templ Layout(title string, username string, opts LayoutOptions) {
 							</li>
 							<li>
 								if len(opts.Instances) > 0 {
-									<details open>
+									<details open?={ opts.CandidatesOpen }>
 										<summary class="flex items-center justify-between gap-3 py-3 rounded-lg hover:bg-base-200">
 											<div class="flex items-center gap-3">
 												<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
@@ -129,57 +130,17 @@ templ Layout(title string, username string, opts LayoutOptions) {
 										</ul>
 									</details>
 								} else {
-									<details open>
-										<summary class="flex items-center justify-between gap-3 py-3 rounded-lg hover:bg-base-200">
-											<div class="flex items-center gap-3">
-												<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-												<span>Candidates</span>
-											</div>
-											if opts.NavStats.OptimizableBytes > 0 {
-												<span class="badge badge-primary badge-sm font-bold font-mono mr-2" title="Estimated optimizable space">
-													~{ humanize.Bytes(uint64(opts.NavStats.OptimizableBytes)) }
-												</span>
-											}
-										</summary>
-										<ul class="mt-1 space-y-1 pl-4">
-											<li>
-												<a href="/candidates" class="flex items-center justify-between py-2 text-xs rounded-lg hover:bg-base-200">
-													<span>All instances</span>
-													if opts.NavStats.OptimizableBytes > 0 {
-														<span class="badge badge-primary badge-xs font-mono" title="Estimated optimizable space">
-															~{ humanize.Bytes(uint64(opts.NavStats.OptimizableBytes)) }
-														</span>
-													}
-												</a>
-											</li>
-											<li>
-												<a href="/candidates?arr_type=sonarr" class="flex items-center justify-between py-2 text-xs rounded-lg hover:bg-base-200">
-													<span class="flex items-center gap-1">
-														Sonarr
-														<span class="badge badge-ghost badge-xs uppercase font-bold text-[9px]">series</span>
-													</span>
-													if opts.NavStats.SonarrOptimizable > 0 {
-														<span class="badge badge-info badge-xs font-mono" title="Estimated savings (series > 2 GB)">
-															~{ humanize.Bytes(uint64(opts.NavStats.SonarrOptimizable)) }
-														</span>
-													}
-												</a>
-											</li>
-											<li>
-												<a href="/candidates?arr_type=radarr" class="flex items-center justify-between py-2 text-xs rounded-lg hover:bg-base-200">
-													<span class="flex items-center gap-1">
-														Radarr
-														<span class="badge badge-ghost badge-xs uppercase font-bold text-[9px]">films</span>
-													</span>
-													if opts.NavStats.RadarrOptimizable > 0 {
-														<span class="badge badge-warning badge-xs font-mono" title="Estimated savings (films > 4 GB)">
-															~{ humanize.Bytes(uint64(opts.NavStats.RadarrOptimizable)) }
-														</span>
-													}
-												</a>
-											</li>
-										</ul>
-									</details>
+									<a href="/candidates" class="flex items-center justify-between py-3 rounded-lg hover:bg-base-200">
+										<div class="flex items-center gap-3">
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+											<span>Candidates</span>
+										</div>
+										if opts.NavStats.OptimizableBytes > 0 {
+											<span class="badge badge-primary badge-sm font-bold font-mono" title="Estimated optimizable space">
+												~{ humanize.Bytes(uint64(opts.NavStats.OptimizableBytes)) }
+											</span>
+										}
+									</a>
 								}
 							</li>
 							<li>
