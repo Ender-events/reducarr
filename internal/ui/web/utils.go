@@ -58,19 +58,25 @@ type InstanceInfo struct {
 }
 
 type NavStats struct {
-	OptimizableBytes     int64 // total (all types)
-	SonarrOptimizable    int64 // savings for sonarr episodes > 2GB
-	RadarrOptimizable    int64 // savings for radarr films > 4GB
-	UnreadErrors         int
-	DownloadingCount     int
+	OptimizableBytes  int64 // total (all types)
+	SonarrOptimizable int64 // savings for sonarr episodes > 2GB
+	RadarrOptimizable int64 // savings for radarr films > 4GB
+	UnreadErrors      int
+	DownloadingCount  int
 }
 
 func buildNavStats(ctx context.Context, database *db.DB, client *arrs.Client) NavStats {
 	var ns NavStats
 	if database != nil {
-		ns.OptimizableBytes, _ = database.GetOptimizableEstimatedSavings()
-		ns.SonarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("sonarr")
-		ns.RadarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("radarr")
+		var radarrLimit, sonarrLimit int64
+		cfg, _ := config.LoadConfig()
+		if cfg != nil {
+			radarrLimit = cfg.WebUI.GetRadarrTargetSizeBytes()
+			sonarrLimit = cfg.WebUI.GetSonarrTargetSizeBytes()
+		}
+		ns.OptimizableBytes, _ = database.GetOptimizableEstimatedSavings(radarrLimit, sonarrLimit)
+		ns.SonarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("sonarr", sonarrLimit)
+		ns.RadarrOptimizable, _ = database.GetOptimizableEstimatedSavingsByType("radarr", radarrLimit)
 		ns.UnreadErrors, _ = database.GetUnreadErrorsCount()
 	}
 	if client != nil {
@@ -106,7 +112,6 @@ func buildLayoutOptions(ctx context.Context, database *db.DB, client *arrs.Clien
 		NavStats:            buildNavStats(ctx, database, client),
 	}
 }
-
 
 // paginationURL builds a /candidates URL for the given page, optional instance filter, arrType, and showIgnored flag.
 func paginationURL(page int, instance string, arrType string, showIgnored bool) string {

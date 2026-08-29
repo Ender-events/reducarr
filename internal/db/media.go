@@ -109,39 +109,56 @@ func (d *DB) GetCandidatesWithMediaFiltered(instance string) ([]CandidateRecord,
 	return records, nil
 }
 
-func (d *DB) GetOptimizableEstimatedSavings() (int64, error) {
+const (
+	DefaultRadarrTargetSize int64 = 4294967296 // 4 GB (4 GiB)
+	DefaultSonarrTargetSize int64 = 2147483648 // 2 GB (2 GiB)
+)
+
+func (d *DB) GetOptimizableEstimatedSavings(radarrLimit, sonarrLimit int64) (int64, error) {
+	if radarrLimit <= 0 {
+		radarrLimit = DefaultRadarrTargetSize
+	}
+	if sonarrLimit <= 0 {
+		sonarrLimit = DefaultSonarrTargetSize
+	}
 	var total int64
 	query := `
 		SELECT COALESCE(SUM(
 			CASE
-				WHEN m.arr_type = 'radarr' AND m.size > 4294967296 THEN m.size - 4294967296
-				WHEN m.arr_type = 'sonarr' AND m.size > 2147483648 THEN m.size - 2147483648
+				WHEN m.arr_type = 'radarr' AND m.size > ? THEN m.size - ?
+				WHEN m.arr_type = 'sonarr' AND m.size > ? THEN m.size - ?
 				ELSE 0
 			END), 0)
 		FROM candidates c
 		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
 		WHERE c.is_ignored = 0
 	`
-	err := d.QueryRow(query).Scan(&total)
+	err := d.QueryRow(query, radarrLimit, radarrLimit, sonarrLimit, sonarrLimit).Scan(&total)
 	return total, err
 }
 
 // GetOptimizableEstimatedSavingsByType returns the estimated savings for a specific arr_type.
-// arrType should be "radarr" (films > 4GB threshold) or "sonarr" (episodes > 2GB threshold).
-func (d *DB) GetOptimizableEstimatedSavingsByType(arrType string) (int64, error) {
+// arrType should be "radarr" or "sonarr". If limit is <= 0, the default threshold for that arrType is used.
+func (d *DB) GetOptimizableEstimatedSavingsByType(arrType string, limit int64) (int64, error) {
+	if limit <= 0 {
+		if arrType == "radarr" {
+			limit = DefaultRadarrTargetSize
+		} else if arrType == "sonarr" {
+			limit = DefaultSonarrTargetSize
+		}
+	}
 	var total int64
 	query := `
 		SELECT COALESCE(SUM(
 			CASE
-				WHEN m.arr_type = 'radarr' AND m.size > 4294967296 THEN m.size - 4294967296
-				WHEN m.arr_type = 'sonarr' AND m.size > 2147483648 THEN m.size - 2147483648
+				WHEN m.arr_type = ? AND m.size > ? THEN m.size - ?
 				ELSE 0
 			END), 0)
 		FROM candidates c
 		JOIN media_files m ON c.arr_instance = m.arr_instance AND c.file_id = m.file_id
 		WHERE c.is_ignored = 0 AND m.arr_type = ?
 	`
-	err := d.QueryRow(query, arrType).Scan(&total)
+	err := d.QueryRow(query, arrType, limit, limit, arrType).Scan(&total)
 	return total, err
 }
 

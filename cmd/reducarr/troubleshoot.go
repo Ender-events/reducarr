@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	troubleshootDbPath string
+	troubleshootDbPath   string
 	troubleshootClearAll bool
 )
 

@@ -206,12 +206,40 @@ func TestDB_GetOptimizableEstimatedSavings(t *testing.T) {
 	require.NoError(t, d.UpsertCandidate(ignoredSerie.ArrInstance, ignoredSerie.FileID, "ignored"))
 	require.NoError(t, d.SetIgnoreCandidate(ignoredSerie.ArrInstance, ignoredSerie.FileID, true))
 
-	savings, err := d.GetOptimizableEstimatedSavings()
-	require.NoError(t, err)
+	t.Run("default thresholds", func(t *testing.T) {
+		savings, err := d.GetOptimizableEstimatedSavings(0, 0)
+		require.NoError(t, err)
 
-	// Expected: 2GB (film) + 0 (small film) + 1GB (serie) = 3GB
-	expected := int64(3 * 1024 * 1024 * 1024)
-	assert.Equal(t, expected, savings)
+		// Expected: 2GB (film: 6GB - 4GB) + 0 (small film: 3GB <= 4GB) + 1GB (serie: 3GB - 2GB) = 3GB
+		expected := int64(3 * 1024 * 1024 * 1024)
+		assert.Equal(t, expected, savings)
+
+		radarrSavings, err := d.GetOptimizableEstimatedSavingsByType("radarr", 0)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2*1024*1024*1024), radarrSavings)
+
+		sonarrSavings, err := d.GetOptimizableEstimatedSavingsByType("sonarr", 0)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1*1024*1024*1024), sonarrSavings)
+	})
+
+	t.Run("custom thresholds", func(t *testing.T) {
+		// Custom: 5GB for radarr (film: 6GB - 5GB = 1GB), 1GB for sonarr (serie: 3GB - 1GB = 2GB)
+		radarrLimit := int64(5 * 1024 * 1024 * 1024)
+		sonarrLimit := int64(1 * 1024 * 1024 * 1024)
+
+		savings, err := d.GetOptimizableEstimatedSavings(radarrLimit, sonarrLimit)
+		require.NoError(t, err)
+		assert.Equal(t, int64(3*1024*1024*1024), savings)
+
+		radarrSavings, err := d.GetOptimizableEstimatedSavingsByType("radarr", radarrLimit)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1*1024*1024*1024), radarrSavings)
+
+		sonarrSavings, err := d.GetOptimizableEstimatedSavingsByType("sonarr", sonarrLimit)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2*1024*1024*1024), sonarrSavings)
+	})
 }
 
 func TestDB_Candidates_ShowIgnored(t *testing.T) {
