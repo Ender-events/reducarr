@@ -3,12 +3,11 @@ module github.com/Ender-events/reducarr
 go 1.26.3
 
 require (
-	github.com/a-h/templ v0.3.1020
 	github.com/autobrr/go-qbittorrent v1.18.0
 	github.com/devopsarr/radarr-go v1.2.1
 	github.com/devopsarr/sonarr-go v1.1.1
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-co-op/gocron/v2 v2.21.2
+	github.com/go-co-op/gocron/v2 v2.22.0
 	github.com/google/uuid v1.6.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/spf13/cobra v1.10.2
