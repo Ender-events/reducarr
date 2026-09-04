@@ -141,5 +141,5 @@ jobs:
                   token: ${{ secrets.GITHUB_TOKEN }}
                   image-names: ${{ github.event.repository.name }}
                   image-tags: "!*"
-                  cut-off: 1 week ago UTC
+                  cut-off: 1w
                   keep-n-most-recent: 0
