@@ -71,64 +71,849 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				<div class="lg:col-span-2 space-y-4 lg:order-1">
 					<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
 						<div class="card-body p-0 text-left">
-							<div class="flex items-center justify-between p-4 border-b border-base-300 bg-base-200/50 rounded-t-xl">
-								<h2 class="card-title text-xs uppercase tracking-widest font-black opacity-40">config.yaml</h2>
-								<div id="config-status"></div>
+							<!-- Card header: title + tab switcher + save button -->
+							<div class="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-base-300 bg-base-200/50 rounded-t-xl">
+								<div class="flex items-center gap-3">
+									<h2 class="card-title text-xs uppercase tracking-widest font-black opacity-40 hidden sm:block">config.yaml</h2>
+									<!-- Tab switcher -->
+									<div class="flex rounded-lg overflow-hidden border border-base-300 text-xs font-bold">
+										<button
+											id="cfg-tab-visual"
+											type="button"
+											onclick="cfgSwitchTab('visual')"
+											class="px-3 py-1.5 bg-primary text-primary-content transition-colors"
+										>Visual</button>
+										<button
+											id="cfg-tab-expert"
+											type="button"
+											onclick="cfgSwitchTab('expert')"
+											class="px-3 py-1.5 bg-base-200 text-base-content/60 hover:bg-base-300 transition-colors"
+										>Expert</button>
+									</div>
+								</div>
+								<div class="flex items-center gap-3">
+									<div id="config-status"></div>
+									<button type="button" onclick="cfgSave()" class="btn btn-primary btn-sm px-6 font-bold shadow-lg">Save</button>
+								</div>
 							</div>
-							<div class="w-full">
+
+							<!-- ══════════════════════════════════════════════ -->
+							<!-- Visual Panel                                   -->
+							<!-- ══════════════════════════════════════════════ -->
+							<div id="cfg-panel-visual" class="p-4 space-y-3">
+
+								<!-- ─── Accordion: Films (Radarr) ────────────── -->
+								<div class="collapse collapse-arrow bg-base-200/30 border border-base-300 rounded-xl">
+									<input type="checkbox" checked/>
+									<div class="collapse-title font-bold text-sm">
+										🎬 Films
+									</div>
+									<div class="collapse-content">
+										<div id="cfg-films-container" class="space-y-3 mb-3">
+											<!-- Radarr instance blocks injected by JS -->
+										</div>
+										<button
+											type="button"
+											onclick="cfgAddInstance('radarr')"
+											class="btn btn-outline btn-sm gap-1 text-xs"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+											</svg>
+											Add Films instance
+										</button>
+									</div>
+								</div>
+
+								<!-- ─── Accordion: Shows (Sonarr) ────────────── -->
+								<div class="collapse collapse-arrow bg-base-200/30 border border-base-300 rounded-xl">
+									<input type="checkbox" checked/>
+									<div class="collapse-title font-bold text-sm">
+										📺 Shows
+									</div>
+									<div class="collapse-content">
+										<div id="cfg-shows-container" class="space-y-3 mb-3">
+											<!-- Sonarr instance blocks injected by JS -->
+										</div>
+										<button
+											type="button"
+											onclick="cfgAddInstance('sonarr')"
+											class="btn btn-outline btn-sm gap-1 text-xs"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+											</svg>
+											Add Shows instance
+										</button>
+									</div>
+								</div>
+
+								<!-- ─── Accordion: Torrent (qBittorrent) ─────── -->
+								<div class="collapse collapse-arrow bg-base-200/30 border border-base-300 rounded-xl">
+									<input type="checkbox" checked/>
+									<div class="collapse-title font-bold text-sm">
+										⬇ Torrent
+									</div>
+									<div class="collapse-content">
+										<div id="cfg-torrent-container" class="space-y-3 mb-3">
+											<!-- qBittorrent instance blocks injected by JS -->
+										</div>
+										<button
+											type="button"
+											onclick="cfgAddInstance('qbittorrent')"
+											class="btn btn-outline btn-sm gap-1 text-xs"
+										>
+											<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+											</svg>
+											Add Torrent instance
+										</button>
+									</div>
+								</div>
+
+								<!-- ─── Accordion: Advanced Options ──────────── -->
+								<div class="collapse collapse-arrow bg-base-200/30 border border-base-300 rounded-xl">
+									<input type="checkbox"/>
+									<div class="collapse-title font-bold text-sm">
+										⚙ Advanced Options
+									</div>
+									<div class="collapse-content">
+										<div class="space-y-4 pt-1">
+
+											<!-- Scoring -->
+											<div class="border border-base-300 rounded-xl p-4 bg-base-100 space-y-3">
+												<h3 class="text-xs font-black uppercase tracking-widest opacity-40">Scoring</h3>
+												<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+													<div class="flex flex-col gap-1">
+														<label class="text-xs font-semibold opacity-70">Max Ratio</label>
+														<div class="join w-full">
+															<input
+																type="text"
+																id="adv-scoring-maxRatio"
+																class="input input-bordered input-sm font-mono join-item flex-1"
+																placeholder="100"
+															/>
+															<span class="btn btn-sm btn-ghost no-animation bg-base-200 border border-base-300 join-item text-xs font-mono opacity-70 cursor-default">MiB/min</span>
+														</div>
+													</div>
+													<div class="flex flex-col gap-1">
+														<label class="text-xs font-semibold opacity-70">Min Seed Duration</label>
+														<div class="join w-full">
+															<input
+																type="text"
+																id="adv-scoring-minSeedDuration"
+																class="input input-bordered input-sm font-mono join-item flex-1"
+																placeholder="744"
+															/>
+															<span class="btn btn-sm btn-ghost no-animation bg-base-200 border border-base-300 join-item text-xs font-mono opacity-70 cursor-default">h</span>
+														</div>
+													</div>
+												</div>
+											</div>
+
+											<!-- WebUI -->
+											<div class="border border-base-300 rounded-xl p-4 bg-base-100 space-y-3">
+												<h3 class="text-xs font-black uppercase tracking-widest opacity-40">Web UI</h3>
+												<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+													<div class="flex flex-col gap-1">
+														<label class="text-xs font-semibold opacity-70">Page Size</label>
+														<input
+															type="number"
+															id="adv-webui-pageSize"
+															class="input input-bordered input-sm"
+															placeholder="25"
+															min="1"
+														/>
+													</div>
+													<div class="flex flex-col gap-1">
+														<label class="text-xs font-semibold opacity-70">Min Rejection Severity <span class="text-[10px] opacity-50 font-normal">(blank = max)</span></label>
+														<input
+															type="number"
+															id="adv-webui-minRejectionSeverity"
+															class="input input-bordered input-sm"
+															placeholder="(default: disabled)"
+															min="0"
+														/>
+													</div>
+												</div>
+											</div>
+
+											<!-- Automation -->
+											<div class="border border-base-300 rounded-xl p-4 bg-base-100 space-y-3">
+												<h3 class="text-xs font-black uppercase tracking-widest opacity-40">Automation</h3>
+												<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+													<div class="flex flex-col gap-1 sm:col-span-2">
+														<label class="text-xs font-semibold opacity-70">Schedule (cron) <span class="text-[10px] opacity-50 font-normal">(e.g. "7 4 * * *" — blank to disable)</span></label>
+														<input
+															type="text"
+															id="adv-automation-schedule"
+															class="input input-bordered input-sm font-mono"
+															placeholder="7 4 * * *"
+														/>
+													</div>
+													<div class="flex flex-col gap-1">
+														<label class="text-xs font-semibold opacity-70">Min Size Reduction</label>
+														<div class="join w-full">
+															<input
+																type="text"
+																id="adv-automation-minSizeReduction"
+																class="input input-bordered input-sm font-mono join-item flex-1"
+																placeholder="10"
+															/>
+															<span class="btn btn-sm btn-ghost no-animation bg-base-200 border border-base-300 join-item text-xs font-mono opacity-70 cursor-default">%</span>
+														</div>
+													</div>
+													<div class="flex flex-col gap-1">
+														<label class="text-xs font-semibold opacity-70">Min Seeders</label>
+														<input
+															type="number"
+															id="adv-automation-minSeeders"
+															class="input input-bordered input-sm"
+															placeholder="3"
+															min="0"
+														/>
+													</div>
+													<div class="flex flex-col gap-1">
+														<label class="text-xs font-semibold opacity-70">Rate Limit (searches/hour)</label>
+														<input
+															type="number"
+															id="adv-automation-rateLimit"
+															class="input input-bordered input-sm"
+															placeholder="6"
+															min="0"
+														/>
+													</div>
+													<div class="flex items-center gap-3 py-2 sm:col-span-2">
+														<input
+															type="checkbox"
+															id="adv-automation-autoUpgrade"
+															class="toggle toggle-primary toggle-sm"
+														/>
+														<span class="text-xs font-semibold opacity-70">Auto Upgrade</span>
+													</div>
+												</div>
+											</div>
+
+										</div>
+									</div>
+								</div>
+
+							</div>
+
+							<!-- ══════════════════════════════════════════════ -->
+							<!-- Expert Panel (Ace Editor)                      -->
+							<!-- ══════════════════════════════════════════════ -->
+							<div id="cfg-panel-expert" class="hidden w-full">
 								<div id="ace-editor" style="height: 500px; width: 100%;" class="text-sm">{ configContent }</div>
 							</div>
+
+							<!-- Hidden HTMX form — receives content string and POSTs to /api/config -->
 							<form
 								id="config-form"
 								hx-post="/api/config"
 								hx-target="#config-status"
 								hx-trigger="submit"
-								class="flex flex-col"
+								class="hidden"
 							>
-								<!-- Hidden input to store Ace content for HTMX -->
 								<input type="hidden" name="content" id="config-content-hidden"/>
-								<div class="p-4 bg-base-200/50 flex justify-end rounded-b-xl border-t border-base-300">
-									<button type="submit" class="btn btn-primary btn-sm px-10 font-bold shadow-lg">Save Configuration</button>
-								</div>
 							</form>
+
 						</div>
 					</div>
 				</div>
 			</div>
 		</div>
-		<!-- Ace Editor Initialization -->
+
+		<!-- js-yaml — for parsing YAML client-side -->
+		<script src="https://cdn.jsdelivr.net/npm/js-yaml@4/dist/js-yaml.min.js"></script>
+		<!-- Ace Editor -->
 		<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/ace.min.js"></script>
 		<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/mode-yaml.min.js"></script>
 		<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/theme-monokai.min.js"></script>
 		<script>
-			(function() {
-				const editor = ace.edit("ace-editor");
-				editor.setTheme("ace/theme/monokai");
-				editor.session.setMode("ace/mode/yaml");
-				editor.setOptions({
-					useSoftTabs: true,
-					tabSize: 4,
-					fontSize: "12px",
-					showPrintMargin: false,
-					scrollPastEnd: 0.1,
+		(function () {
+			'use strict';
+
+			// ── Ace Editor ──────────────────────────────────────────────────────────────
+			var aceEditor = ace.edit('ace-editor');
+			aceEditor.setTheme('ace/theme/monokai');
+			aceEditor.session.setMode('ace/mode/yaml');
+			aceEditor.setOptions({
+				useSoftTabs: true,
+				tabSize: 4,
+				fontSize: '12px',
+				showPrintMargin: false,
+				scrollPastEnd: 0.1,
+			});
+			aceEditor.resize();
+
+			// ── State ───────────────────────────────────────────────────────────────────
+			var activeTab = 'visual';
+			// Stores the originally-parsed config object so unknown keys (e.g. rateLimit at
+			// root level) are preserved when re-serialising from the visual form.
+			var cfgOriginal = {};
+
+			// ── SVG snippets ────────────────────────────────────────────────────────────
+			var SVG_PLUS = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>';
+			var SVG_TRASH = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>';
+			var SVG_CROSS = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
+			var SVG_EYE = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
+
+			// ── Utility: build an element from props + children ──────────────────────────
+			// Safety: never pass untrusted data via innerHTML/innerText keys — those
+			// bypass the DOM's built-in escaping. Use .value or .textContent instead.
+			function el(tag, props, children) {
+				var e = document.createElement(tag);
+				for (var k in props) {
+					if (k === 'dataset') {
+						for (var dk in props[k]) e.dataset[dk] = props[k][dk];
+					} else e[k] = props[k];
+				}
+				(children || []).forEach(function (c) { e.appendChild(c); });
+				return e;
+			}
+
+			// ── Reusable: labeled secret field with show/hide toggle ─────────────────────
+			function secretField(labelText, inputClass, value, placeholder, colSpan, toggleTitle) {
+				var toggle = el('button', {
+					type: 'button',
+					className: 'btn btn-sm btn-outline join-item',
+					title: toggleTitle || 'Show / hide',
+					innerHTML: SVG_EYE,
 				});
-				editor.resize();
+				toggle.onclick = function () { cfgToggleSecret(toggle); };
+				var input = el('input', {
+					type: 'password',
+					className: inputClass + ' join-item flex-1 w-full',
+					value: value || '',
+					placeholder: placeholder,
+				});
+				return el('div', { className: 'flex flex-col gap-1' + (colSpan ? ' sm:col-span-2' : '') }, [
+					el('label', { className: 'text-xs font-semibold opacity-60', textContent: labelText }),
+					el('div', { className: 'join w-full' }, [input, toggle]),
+				]);
+			}
 
-				const form = document.getElementById('config-form');
-				const hiddenInput = document.getElementById('config-content-hidden');
+			// ── Path Mapping Row ───────────────────────────────────────────────────────
+			function mappingRowEl(pm) {
+				pm = pm || {};
+				var delBtn = el('button', {
+					type: 'button',
+					className: 'btn btn-ghost btn-xs text-error shrink-0',
+					title: 'Remove mapping',
+					innerHTML: SVG_CROSS,
+				});
+				delBtn.onclick = function () { cfgDelMapping(delBtn); };
+				return el('div', { className: 'flex items-center gap-2 path-mapping-row' }, [
+					el('input', {
+						type: 'text',
+						className: 'input input-bordered input-xs flex-1 field-remote font-mono',
+						value: pm.remote || '',
+						placeholder: '/remote/path',
+					}),
+					el('span', { className: 'text-xs opacity-40 font-bold shrink-0', textContent: '→' }),
+					el('input', {
+						type: 'text',
+						className: 'input input-bordered input-xs flex-1 field-local font-mono',
+						value: pm.local || '',
+						placeholder: '/local/path',
+					}),
+					delBtn,
+				]);
+			}
 
-				// Update hidden input before HTMX request
-				form.addEventListener('submit', function() {
-					hiddenInput.value = editor.getValue();
+			// ── Instance Block ───────────────────────────────────────────────────────────
+			function instanceEl(type, data) {
+				data = data || {};
+				var name = data.name || '', url = data.url || '';
+
+				var typeSelect = el('select', { className: 'select select-bordered select-xs field-type', title: 'Service type' }, [
+					el('option', { value: type, selected: true, textContent: type }),
+				]);
+				var delInstanceBtn = el('button', {
+					type: 'button',
+					className: 'btn btn-ghost btn-xs text-error shrink-0',
+					title: 'Delete this instance',
+					innerHTML: SVG_TRASH,
+				});
+				delInstanceBtn.onclick = function () { cfgDelInstance(delInstanceBtn); };
+
+				var header = el('div', { className: 'flex items-center justify-between gap-2' }, [
+					el('div', { className: 'flex items-center gap-2 min-w-0' }, [typeSelect]),
+					delInstanceBtn,
+				]);
+
+				var nameInput = el('input', {
+					type: 'text',
+					className: 'input input-bordered input-sm field-name' + (name ? ' opacity-60 cursor-not-allowed' : ''),
+					value: name,
+					placeholder: 'My instance',
+					readOnly: !!name,
+				});
+				nameInput.oninput = function () { cfgUpdateNameLabel(nameInput); };
+				var urlInput = el('input', {
+					type: 'text',
+					className: 'input input-bordered input-sm field-url font-mono',
+					value: url,
+					placeholder: 'http://localhost:7878',
 				});
 
-				// Trigger health refresh after config save
-				document.body.addEventListener('htmx:afterRequest', function(evt) {
+				var grid = el('div', { className: 'grid grid-cols-1 sm:grid-cols-2 gap-3 items-start' }, [
+					el('div', { className: 'flex flex-col gap-1' }, [
+						el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'Name' }),
+						nameInput,
+					]),
+					el('div', { className: 'flex flex-col gap-1' }, [
+						el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'URL' }),
+						urlInput,
+					]),
+				]);
+
+				if (type === 'qbittorrent') {
+					var userInput = el('input', {
+						type: 'text',
+						className: 'input input-bordered input-sm field-username',
+						value: data.username || '',
+						placeholder: 'admin',
+					});
+					var roToggle = el('input', {
+						type: 'checkbox',
+						className: 'toggle toggle-primary toggle-sm field-readonly',
+						checked: !!data.readOnly,
+					});
+					grid.appendChild(el('div', { className: 'flex flex-col gap-1' }, [
+						el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'Username' }),
+						userInput,
+					]));
+					grid.appendChild(secretField('Password', 'input input-bordered input-sm field-password', data.password, '••••••••', false, 'Show / hide password'));
+					grid.appendChild(el('div', { className: 'flex items-center gap-3 py-1 sm:col-span-2' }, [
+						roToggle,
+						el('span', { className: 'text-xs font-semibold opacity-70', textContent: 'Read Only' }),
+					]));
+				} else {
+					grid.appendChild(secretField('API Key', 'input input-bordered input-sm field-apikey', data.apiKey, 'Your API key', true, 'Show / hide API key'));
+				}
+
+				var pmContainer = el('div', { className: 'space-y-2 path-mappings-container' });
+				(data.pathMappings || []).forEach(function (pm) { pmContainer.appendChild(mappingRowEl(pm)); });
+				var addMappingBtn = el('button', {
+					type: 'button',
+					className: 'btn btn-ghost btn-xs mt-1 self-start gap-1 text-xs',
+					innerHTML: SVG_PLUS + ' Add mapping',
+				});
+				addMappingBtn.onclick = function () { cfgAddMapping(addMappingBtn); };
+
+				var pmSection = el('div', { className: 'flex flex-col gap-1.5 mt-2' }, [
+					el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'Path Mappings' }),
+					pmContainer,
+					addMappingBtn,
+				]);
+
+				return el('div', {
+					className: 'instance-block border border-base-300 rounded-xl p-4 bg-base-100 space-y-3',
+					dataset: { type: type },
+				}, [header, grid, pmSection]);
+			}
+
+			// ── Tab Switching ───────────────────────────────────────────────────────────
+			window.cfgSwitchTab = function (tab) {
+				var panelVisual = document.getElementById('cfg-panel-visual');
+				var panelExpert = document.getElementById('cfg-panel-expert');
+				var btnVisual   = document.getElementById('cfg-tab-visual');
+				var btnExpert   = document.getElementById('cfg-tab-expert');
+
+				if (tab === 'visual') {
+					// If coming from Expert tab or if Ace has updated content, update Visual
+					if (activeTab === 'expert') {
+						try {
+							var currentYAML = aceEditor.getValue();
+							var parsed = jsyaml.load(currentYAML) || {};
+							cfgOriginal = parsed;
+							cfgPopulate(cfgOriginal);
+						} catch (err) {
+							console.warn('[reducarr] Syntax error in Expert YAML:', err);
+						}
+					}
+					activeTab = 'visual';
+					panelVisual.classList.remove('hidden');
+					panelExpert.classList.add('hidden');
+					btnVisual.className = 'px-3 py-1.5 bg-primary text-primary-content transition-colors text-xs font-bold';
+					btnExpert.className = 'px-3 py-1.5 bg-base-200 text-base-content/60 hover:bg-base-300 transition-colors text-xs font-bold';
+				} else {
+					activeTab = 'expert';
+					panelVisual.classList.add('hidden');
+					panelExpert.classList.remove('hidden');
+					btnExpert.className = 'px-3 py-1.5 bg-primary text-primary-content transition-colors text-xs font-bold';
+					btnVisual.className = 'px-3 py-1.5 bg-base-200 text-base-content/60 hover:bg-base-300 transition-colors text-xs font-bold';
+					// Sync Ace editor with current visual state
+					aceEditor.setValue(cfgBuildYAML(), -1);
+					aceEditor.resize();
+				}
+			};
+
+			// ── Save ────────────────────────────────────────────────────────────────────
+			window.cfgSave = function () {
+				var content;
+				if (activeTab === 'expert') {
+					content = aceEditor.getValue();
+					try {
+						cfgOriginal = jsyaml.load(content) || {};
+						cfgPopulate(cfgOriginal);
+					} catch (e) {}
+				} else {
+					content = cfgBuildYAML();
+					// Keep Ace in sync
+					aceEditor.setValue(content, -1);
+				}
+
+				// Lock all non-empty name inputs now that Save is clicked
+				document.querySelectorAll('.field-name').forEach(function (input) {
+					if (input.value.trim()) {
+						input.readOnly = true;
+						input.classList.add('opacity-60', 'cursor-not-allowed');
+					}
+				});
+
+				document.getElementById('config-content-hidden').value = content;
+				document.getElementById('config-form').dispatchEvent(new Event('submit'));
+			};
+
+			// ── Add / Delete Instance ───────────────────────────────────────────────────
+			window.cfgAddInstance = function (type) {
+				var containerId = type === 'radarr'  ? 'cfg-films-container'
+					: type === 'sonarr' ? 'cfg-shows-container'
+					: 'cfg-torrent-container';
+				var container = document.getElementById(containerId);
+				container.appendChild(instanceEl(type, {}));
+			};
+
+			window.cfgDelInstance = function (btn) {
+				var block = btn.closest('.instance-block');
+				if (block && confirm('Delete this instance?')) {
+					block.remove();
+				}
+			};
+
+			// ── Add / Delete Path Mapping ───────────────────────────────────────────────
+			window.cfgAddMapping = function (btn) {
+				var container = btn.closest('.instance-block').querySelector('.path-mappings-container');
+				container.appendChild(mappingRowEl({}));
+			};
+
+	window.cfgDelMapping = function (btn) {
+		btn.closest('.path-mapping-row').remove();
+	};
+
+	// ── Toggle Secret (password ↔ text) ─────────────────────────────────────────
+	window.cfgToggleSecret = function (btn) {
+		var input = btn.closest('.join').querySelector('input');
+		input.type = input.type === 'password' ? 'text' : 'password';
+	};
+
+	// ── Update Name Label dynamically on input ──────────────────────────────────
+	window.cfgUpdateNameLabel = function (input) {
+		var val = input.value.trim();
+		var label = input.closest('.instance-block').querySelector('.field-name-label');
+		if (label) {
+			label.textContent = val || 'New instance';
+		}
+	};
+
+			// ── Custom YAML Serializer with double-quotes & clean formatting ─────────────
+			function serializeConfigYAML(cfg) {
+				var lines = [];
+
+				function q(v) {
+					if (v === null || v === undefined) return '""';
+					return JSON.stringify(String(v));
+				}
+
+				// sonarr
+				if (cfg.sonarr && Array.isArray(cfg.sonarr) && cfg.sonarr.length > 0) {
+					lines.push('sonarr:');
+					cfg.sonarr.forEach(function (inst) {
+						lines.push('    - name: ' + q(inst.name));
+						lines.push('      url: ' + q(inst.url));
+						lines.push('      apiKey: ' + q(inst.apiKey));
+						if (inst.pathMappings && Array.isArray(inst.pathMappings) && inst.pathMappings.length > 0) {
+							lines.push('      pathMappings:');
+							inst.pathMappings.forEach(function (pm) {
+								lines.push('          - remote: ' + q(pm.remote));
+								lines.push('            local: ' + q(pm.local));
+							});
+						}
+					});
+					lines.push('');
+				}
+
+				// radarr
+				if (cfg.radarr && Array.isArray(cfg.radarr) && cfg.radarr.length > 0) {
+					lines.push('radarr:');
+					cfg.radarr.forEach(function (inst) {
+						lines.push('    - name: ' + q(inst.name));
+						lines.push('      url: ' + q(inst.url));
+						lines.push('      apiKey: ' + q(inst.apiKey));
+						if (inst.pathMappings && Array.isArray(inst.pathMappings) && inst.pathMappings.length > 0) {
+							lines.push('      pathMappings:');
+							inst.pathMappings.forEach(function (pm) {
+								lines.push('          - remote: ' + q(pm.remote));
+								lines.push('            local: ' + q(pm.local));
+							});
+						}
+					});
+					lines.push('');
+				}
+
+				// qbittorrent
+				if (cfg.qbittorrent && Array.isArray(cfg.qbittorrent) && cfg.qbittorrent.length > 0) {
+					lines.push('qbittorrent:');
+					cfg.qbittorrent.forEach(function (inst) {
+						lines.push('    - name: ' + q(inst.name));
+						lines.push('      url: ' + q(inst.url));
+						lines.push('      username: ' + q(inst.username));
+						lines.push('      password: ' + q(inst.password));
+						lines.push('      readOnly: ' + (inst.readOnly ? 'true' : 'false'));
+						if (inst.pathMappings && Array.isArray(inst.pathMappings) && inst.pathMappings.length > 0) {
+							lines.push('      pathMappings:');
+							inst.pathMappings.forEach(function (pm) {
+								lines.push('          - remote: ' + q(pm.remote));
+								lines.push('            local: ' + q(pm.local));
+							});
+						}
+					});
+					lines.push('');
+				}
+
+				// scoring
+				if (cfg.scoring && Object.keys(cfg.scoring).length > 0) {
+					var scLines = [];
+					if (cfg.scoring.maxRatio !== undefined && cfg.scoring.maxRatio !== '') {
+						scLines.push('    maxRatio: ' + q(cfg.scoring.maxRatio));
+					}
+					if (cfg.scoring.minSeedDuration !== undefined && cfg.scoring.minSeedDuration !== '') {
+						scLines.push('    minSeedDuration: ' + q(cfg.scoring.minSeedDuration));
+					}
+					if (scLines.length > 0) {
+						lines.push('scoring:');
+						lines = lines.concat(scLines);
+						lines.push('');
+					}
+				}
+
+				// webui
+				if (cfg.webui && Object.keys(cfg.webui).length > 0) {
+					var wuLines = [];
+					if (cfg.webui.pageSize !== undefined && cfg.webui.pageSize !== '') {
+						wuLines.push('    pageSize: ' + cfg.webui.pageSize);
+					}
+					if (cfg.webui.minRejectionSeverity !== undefined && cfg.webui.minRejectionSeverity !== '') {
+						wuLines.push('    minRejectionSeverity: ' + cfg.webui.minRejectionSeverity);
+					}
+					if (wuLines.length > 0) {
+						lines.push('webui:');
+						lines = lines.concat(wuLines);
+						lines.push('');
+					}
+				}
+
+				// automation
+				if (cfg.automation && Object.keys(cfg.automation).length > 0) {
+					var auLines = [];
+					if (cfg.automation.schedule !== undefined && cfg.automation.schedule !== '') {
+						auLines.push('    schedule: ' + q(cfg.automation.schedule));
+					}
+					if (cfg.automation.autoUpgrade !== undefined) {
+						auLines.push('    autoUpgrade: ' + (cfg.automation.autoUpgrade ? 'true' : 'false'));
+					}
+					if (cfg.automation.minSizeReduction !== undefined && cfg.automation.minSizeReduction !== '') {
+						auLines.push('    minSizeReduction: ' + q(cfg.automation.minSizeReduction));
+					}
+					if (cfg.automation.minSeeders !== undefined && cfg.automation.minSeeders !== '') {
+						auLines.push('    minSeeders: ' + cfg.automation.minSeeders);
+					}
+					if (cfg.automation.rateLimit !== undefined && cfg.automation.rateLimit !== '') {
+						auLines.push('    rateLimit: ' + cfg.automation.rateLimit);
+					}
+					if (auLines.length > 0) {
+						lines.push('automation:');
+						lines = lines.concat(auLines);
+						lines.push('');
+					}
+				}
+
+				// Other top-level properties (e.g. rateLimit, dryRun)
+				var knownKeys = ['sonarr', 'radarr', 'qbittorrent', 'scoring', 'webui', 'automation'];
+				Object.keys(cfg).forEach(function (key) {
+					if (knownKeys.indexOf(key) === -1) {
+						var val = cfg[key];
+						if (typeof val === 'string') {
+							lines.push(key + ': ' + q(val));
+						} else if (typeof val === 'boolean' || typeof val === 'number') {
+							lines.push(key + ': ' + val);
+						} else {
+							lines.push(key + ': ' + JSON.stringify(val));
+						}
+					}
+				});
+
+				return lines.join('\n').trim() + '\n';
+			}
+
+			// ── Build YAML from the visual form ─────────────────────────────────────────
+			function cfgBuildYAML() {
+				// Clone original object so unknown root-level keys (e.g. rateLimit) are kept.
+				var out = {};
+				Object.keys(cfgOriginal).forEach(function (k) { out[k] = cfgOriginal[k]; });
+
+				function readInstances(containerId, isQbt) {
+					var blocks = document.querySelectorAll('#' + containerId + ' .instance-block');
+					return Array.prototype.map.call(blocks, function (b) {
+						var inst = {
+							name: b.querySelector('.field-name').value,
+							url:  b.querySelector('.field-url').value,
+						};
+						if (isQbt) {
+							inst.username = b.querySelector('.field-username').value;
+							inst.password = b.querySelector('.field-password').value;
+							var roInput = b.querySelector('.field-readonly');
+							inst.readOnly = roInput ? roInput.checked : false;
+						} else {
+							inst.apiKey = b.querySelector('.field-apikey').value;
+						}
+						var rows = b.querySelectorAll('.path-mapping-row');
+						if (rows.length > 0) {
+							inst.pathMappings = Array.prototype.map.call(rows, function (r) {
+								return {
+									remote: r.querySelector('.field-remote').value,
+									local:  r.querySelector('.field-local').value,
+								};
+							});
+						}
+						return inst;
+					});
+				}
+
+				// Sonarr (Shows)
+				var sonarr = readInstances('cfg-shows-container', false);
+				if (sonarr.length > 0) { out.sonarr = sonarr; } else { delete out.sonarr; }
+
+				// Radarr (Films)
+				var radarr = readInstances('cfg-films-container', false);
+				if (radarr.length > 0) { out.radarr = radarr; } else { delete out.radarr; }
+
+				// qBittorrent (Torrent)
+				var qbt = readInstances('cfg-torrent-container', true);
+				if (qbt.length > 0) { out.qbittorrent = qbt; } else { delete out.qbittorrent; }
+
+				// Scoring
+				var scoring = {};
+				var maxRatioVal   = document.getElementById('adv-scoring-maxRatio').value.trim();
+				var minSeedDurVal = document.getElementById('adv-scoring-minSeedDuration').value.trim();
+				if (maxRatioVal) {
+					if (!/MiB\/min$/i.test(maxRatioVal)) {
+						maxRatioVal += 'MiB/min';
+					}
+					scoring.maxRatio = maxRatioVal;
+				}
+				if (minSeedDurVal) {
+					if (!/h$/i.test(minSeedDurVal)) {
+						minSeedDurVal += 'h';
+					}
+					scoring.minSeedDuration = minSeedDurVal;
+				}
+				if (Object.keys(scoring).length > 0) { out.scoring = scoring; } else { delete out.scoring; }
+
+				// WebUI
+				var webui = {};
+				var pageSize   = document.getElementById('adv-webui-pageSize').value.trim();
+				var minRejSev  = document.getElementById('adv-webui-minRejectionSeverity').value.trim();
+				if (pageSize)  webui.pageSize              = parseInt(pageSize, 10);
+				if (minRejSev) webui.minRejectionSeverity  = parseInt(minRejSev, 10);
+				if (Object.keys(webui).length > 0) { out.webui = webui; } else { delete out.webui; }
+
+				// Automation
+				var automation = {};
+				var schedule      = document.getElementById('adv-automation-schedule').value.trim();
+				var minSizeRedVal = document.getElementById('adv-automation-minSizeReduction').value.trim();
+				var minSeeders    = document.getElementById('adv-automation-minSeeders').value.trim();
+				var autoRateLimit = document.getElementById('adv-automation-rateLimit').value.trim();
+				var autoUpgrade   = document.getElementById('adv-automation-autoUpgrade').checked;
+				if (schedule) automation.schedule = schedule;
+				automation.autoUpgrade = autoUpgrade;
+				if (minSizeRedVal) {
+					if (!/\%$/.test(minSizeRedVal)) {
+						minSizeRedVal += '%';
+					}
+					automation.minSizeReduction = minSizeRedVal;
+				}
+				if (minSeeders)    automation.minSeeders = parseInt(minSeeders, 10);
+				if (autoRateLimit) automation.rateLimit  = parseInt(autoRateLimit, 10);
+				if (Object.keys(automation).length > 0) { out.automation = automation; } else { delete out.automation; }
+
+				return serializeConfigYAML(out);
+			}
+
+			// ── Populate form from parsed config object ──────────────────────────────────
+			function cfgPopulate(cfg) {
+				cfg = cfg || {};
+				function fillContainer(containerId, items, type) {
+					var container = document.getElementById(containerId);
+					container.innerHTML = '';
+					(items || []).forEach(function (inst) {
+						container.appendChild(instanceEl(type, inst));
+					});
+				}
+
+				fillContainer('cfg-films-container',   cfg.radarr,      'radarr');
+				fillContainer('cfg-shows-container',   cfg.sonarr,      'sonarr');
+				fillContainer('cfg-torrent-container', cfg.qbittorrent, 'qbittorrent');
+
+				// Scoring
+				var sc = cfg.scoring || {};
+				var rawRatio = sc.maxRatio || '';
+				document.getElementById('adv-scoring-maxRatio').value = rawRatio.replace(/\s*MiB\/min$/i, '').trim();
+				var rawDur = sc.minSeedDuration || '';
+				document.getElementById('adv-scoring-minSeedDuration').value = rawDur.replace(/\s*h$/i, '').trim();
+
+				// WebUI — skip MAX_INT values used as "disabled" sentinel
+				var wu  = cfg.webui || {};
+				document.getElementById('adv-webui-pageSize').value = wu.pageSize || '';
+				var mrs = wu.minRejectionSeverity;
+				var MAX = 2147483647;
+				document.getElementById('adv-webui-minRejectionSeverity').value =
+					(mrs !== undefined && mrs !== MAX && mrs !== (MAX + 1)) ? mrs : '';
+
+				// Automation
+				var au = cfg.automation || {};
+				document.getElementById('adv-automation-schedule').value = au.schedule || '';
+				document.getElementById('adv-automation-autoUpgrade').checked = !!au.autoUpgrade;
+				var rawRed = au.minSizeReduction || '';
+				document.getElementById('adv-automation-minSizeReduction').value = rawRed.replace(/\s*\%$/i, '').trim();
+				document.getElementById('adv-automation-minSeeders').value =
+					(au.minSeeders !== undefined && au.minSeeders !== null) ? au.minSeeders : '';
+				document.getElementById('adv-automation-rateLimit').value =
+					(au.rateLimit !== undefined && au.rateLimit !== null) ? au.rateLimit : '';
+			}
+
+			// ── Initialise on page load ──────────────────────────────────────────────────
+			(function init() {
+				try {
+					var rawYAML = aceEditor.getValue();
+					cfgOriginal = jsyaml.load(rawYAML) || {};
+					cfgPopulate(cfgOriginal);
+				} catch (e) {
+					console.warn('[reducarr] Could not parse config.yaml:', e);
+					cfgOriginal = {};
+				}
+
+				// Trigger Service Health refresh after a config save
+				document.body.addEventListener('htmx:afterRequest', function (evt) {
 					if (evt.detail.path === '/api/config' && evt.detail.successful) {
 						document.body.dispatchEvent(new CustomEvent('health-refresh'));
 					}
 				});
-			})();
+			}());
+		}());
 		</script>
 	}
 }

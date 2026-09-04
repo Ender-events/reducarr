@@ -1,6 +1,6 @@
 module github.com/Ender-events/reducarr
 
-go 1.26.3
+go 1.26.8
 
 require (
 	github.com/a-h/templ v0.3.1020
@@ -8,13 +8,13 @@ require (
 	github.com/devopsarr/radarr-go v1.2.1
 	github.com/devopsarr/sonarr-go v1.1.1
 	github.com/dustin/go-humanize v1.0.1
-	github.com/go-co-op/gocron/v2 v2.21.2
+	github.com/go-co-op/gocron/v2 v2.22.0
 	github.com/google/uuid v1.6.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.55.0
 	golang.org/x/term v0.45.0
 	modernc.org/sqlite v1.57.0
 )
@@ -44,7 +44,7 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	modernc.org/libc v1.74.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
