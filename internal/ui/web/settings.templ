@@ -353,122 +353,170 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 			// root level) are preserved when re-serialising from the visual form.
 			var cfgOriginal = {};
 
-			// ── Utility: HTML escape ────────────────────────────────────────────────────
-			function esc(str) {
-				if (str === null || str === undefined) return '';
-				return String(str)
-					.replace(/&/g, '&amp;')
-					.replace(/</g, '&lt;')
-					.replace(/>/g, '&gt;')
-					.replace(/"/g, '&quot;')
-					.replace(/'/g, '&#39;');
-			}
-
 			// ── SVG snippets ────────────────────────────────────────────────────────────
 			var SVG_PLUS = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>';
 			var SVG_TRASH = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>';
 			var SVG_CROSS = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
 			var SVG_EYE = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>';
 
-			// ── Path Mapping Row HTML ───────────────────────────────────────────────────
-			function mappingRowHTML(pm) {
-				pm = pm || {};
-				return (
-					'<div class="flex items-center gap-2 path-mapping-row">' +
-						'<input type="text" class="input input-bordered input-xs flex-1 field-remote font-mono" value="' + esc(pm.remote) + '" placeholder="/remote/path"/>' +
-						'<span class="text-xs opacity-40 font-bold shrink-0">→</span>' +
-						'<input type="text" class="input input-bordered input-xs flex-1 field-local font-mono" value="' + esc(pm.local) + '" placeholder="/local/path"/>' +
-						'<button type="button" class="btn btn-ghost btn-xs text-error shrink-0" onclick="cfgDelMapping(this)" title="Remove mapping">' + SVG_CROSS + '</button>' +
-					'</div>'
-				);
+			// ── Utility: build an element from props + children ──────────────────────────
+			// Safety: never pass untrusted data via innerHTML/innerText keys — those
+			// bypass the DOM's built-in escaping. Use .value or .textContent instead.
+			function el(tag, props, children) {
+				var e = document.createElement(tag);
+				for (var k in props) {
+					if (k === 'dataset') {
+						for (var dk in props[k]) e.dataset[dk] = props[k][dk];
+					} else e[k] = props[k];
+				}
+				(children || []).forEach(function (c) { e.appendChild(c); });
+				return e;
 			}
 
-			// ── Instance Block HTML ─────────────────────────────────────────────────────
-			function instanceHTML(type, data) {
+			// ── Reusable: labeled secret field with show/hide toggle ─────────────────────
+			function secretField(labelText, inputClass, value, placeholder, colSpan, toggleTitle) {
+				var toggle = el('button', {
+					type: 'button',
+					className: 'btn btn-sm btn-outline join-item',
+					title: toggleTitle || 'Show / hide',
+					innerHTML: SVG_EYE,
+				});
+				toggle.onclick = function () { cfgToggleSecret(toggle); };
+				var input = el('input', {
+					type: 'password',
+					className: inputClass + ' join-item flex-1 w-full',
+					value: value || '',
+					placeholder: placeholder,
+				});
+				return el('div', { className: 'flex flex-col gap-1' + (colSpan ? ' sm:col-span-2' : '') }, [
+					el('label', { className: 'text-xs font-semibold opacity-60', textContent: labelText }),
+					el('div', { className: 'join w-full' }, [input, toggle]),
+				]);
+			}
+
+			// ── Path Mapping Row ───────────────────────────────────────────────────────
+			function mappingRowEl(pm) {
+				pm = pm || {};
+				var delBtn = el('button', {
+					type: 'button',
+					className: 'btn btn-ghost btn-xs text-error shrink-0',
+					title: 'Remove mapping',
+					innerHTML: SVG_CROSS,
+				});
+				delBtn.onclick = function () { cfgDelMapping(delBtn); };
+				return el('div', { className: 'flex items-center gap-2 path-mapping-row' }, [
+					el('input', {
+						type: 'text',
+						className: 'input input-bordered input-xs flex-1 field-remote font-mono',
+						value: pm.remote || '',
+						placeholder: '/remote/path',
+					}),
+					el('span', { className: 'text-xs opacity-40 font-bold shrink-0', textContent: '→' }),
+					el('input', {
+						type: 'text',
+						className: 'input input-bordered input-xs flex-1 field-local font-mono',
+						value: pm.local || '',
+						placeholder: '/local/path',
+					}),
+					delBtn,
+				]);
+			}
+
+			// ── Instance Block ───────────────────────────────────────────────────────────
+			function instanceEl(type, data) {
 				data = data || {};
-				var name      = data.name || '';
-				var url       = data.url  || '';
-				var locked    = name ? 'readonly' : '';
-				var lockCss   = name ? ' opacity-60 cursor-not-allowed' : '';
-				var label     = esc(name) || 'New instance';
+				var name = data.name || '', url = data.url || '';
 
-				// Type selector
-				var typeOpts = '<option value="' + type + '" selected>' + type + '</option>';
-				var typeSelect =
-					'<select class="select select-bordered select-xs field-type" title="Service type">' +
-						typeOpts +
-					'</select>';
+				var typeSelect = el('select', { className: 'select select-bordered select-xs field-type', title: 'Service type' }, [
+					el('option', { value: type, selected: true, textContent: type }),
+				]);
+				var nameLabel = el('span', {
+					className: 'text-xs font-semibold opacity-50 truncate field-name-label',
+					textContent: name || 'New instance',
+				});
+				var delInstanceBtn = el('button', {
+					type: 'button',
+					className: 'btn btn-ghost btn-xs text-error shrink-0',
+					title: 'Delete this instance',
+					innerHTML: SVG_TRASH,
+				});
+				delInstanceBtn.onclick = function () { cfgDelInstance(delInstanceBtn); };
 
-				// Secret & specific fields
-				var secretHTML = '';
+				var header = el('div', { className: 'flex items-center justify-between gap-2' }, [
+					el('div', { className: 'flex items-center gap-2 min-w-0' }, [typeSelect, nameLabel]),
+					delInstanceBtn,
+				]);
+
+				var nameInput = el('input', {
+					type: 'text',
+					className: 'input input-bordered input-sm field-name' + (name ? ' opacity-60 cursor-not-allowed' : ''),
+					value: name,
+					placeholder: 'My instance',
+					readOnly: !!name,
+				});
+				nameInput.oninput = function () { cfgUpdateNameLabel(nameInput); };
+				var urlInput = el('input', {
+					type: 'text',
+					className: 'input input-bordered input-sm field-url font-mono',
+					value: url,
+					placeholder: 'http://localhost:7878',
+				});
+
+				var grid = el('div', { className: 'grid grid-cols-1 sm:grid-cols-2 gap-3 items-start' }, [
+					el('div', { className: 'flex flex-col gap-1' }, [
+						el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'Name' }),
+						nameInput,
+					]),
+					el('div', { className: 'flex flex-col gap-1' }, [
+						el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'URL' }),
+						urlInput,
+					]),
+				]);
+
 				if (type === 'qbittorrent') {
-					var user = esc(data.username || '');
-					var pass = esc(data.password || '');
-					var readOnlyChecked = data.readOnly ? 'checked' : '';
-					secretHTML =
-						'<div class="flex flex-col gap-1">' +
-							'<label class="text-xs font-semibold opacity-60">Username</label>' +
-							'<input type="text" class="input input-bordered input-sm field-username" value="' + user + '" placeholder="admin"/>' +
-						'</div>' +
-						'<div class="flex flex-col gap-1">' +
-							'<label class="text-xs font-semibold opacity-60">Password</label>' +
-							'<div class="join w-full">' +
-								'<input type="password" class="input input-bordered input-sm field-password join-item flex-1 w-full" value="' + pass + '" placeholder="••••••••"/>' +
-								'<button type="button" class="btn btn-sm btn-outline join-item" onclick="cfgToggleSecret(this)" title="Show / hide password">' + SVG_EYE + '</button>' +
-							'</div>' +
-						'</div>' +
-						'<div class="flex items-center gap-3 py-1 sm:col-span-2">' +
-							'<input type="checkbox" class="toggle toggle-primary toggle-sm field-readonly" ' + readOnlyChecked + '/>' +
-							'<span class="text-xs font-semibold opacity-70">Read Only</span>' +
-						'</div>';
+					var userInput = el('input', {
+						type: 'text',
+						className: 'input input-bordered input-sm field-username',
+						value: data.username || '',
+						placeholder: 'admin',
+					});
+					var roToggle = el('input', {
+						type: 'checkbox',
+						className: 'toggle toggle-primary toggle-sm field-readonly',
+						checked: !!data.readOnly,
+					});
+					grid.appendChild(el('div', { className: 'flex flex-col gap-1' }, [
+						el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'Username' }),
+						userInput,
+					]));
+					grid.appendChild(secretField('Password', 'input input-bordered input-sm field-password', data.password, '••••••••', false, 'Show / hide password'));
+					grid.appendChild(el('div', { className: 'flex items-center gap-3 py-1 sm:col-span-2' }, [
+						roToggle,
+						el('span', { className: 'text-xs font-semibold opacity-70', textContent: 'Read Only' }),
+					]));
 				} else {
-					var apiKey = esc(data.apiKey || '');
-					secretHTML =
-						'<div class="flex flex-col gap-1 sm:col-span-2">' +
-							'<label class="text-xs font-semibold opacity-60">API Key</label>' +
-							'<div class="join w-full">' +
-								'<input type="password" class="input input-bordered input-sm field-apikey join-item flex-1 w-full" value="' + apiKey + '" placeholder="Your API key"/>' +
-								'<button type="button" class="btn btn-sm btn-outline join-item" onclick="cfgToggleSecret(this)" title="Show / hide API key">' + SVG_EYE + '</button>' +
-							'</div>' +
-						'</div>';
+					grid.appendChild(secretField('API Key', 'input input-bordered input-sm field-apikey', data.apiKey, 'Your API key', true, 'Show / hide API key'));
 				}
 
-				// Path mappings
-				var mappings = data.pathMappings || [];
-				var mappingsHTML = mappings.map(mappingRowHTML).join('');
+				var pmContainer = el('div', { className: 'space-y-2 path-mappings-container' });
+				(data.pathMappings || []).forEach(function (pm) { pmContainer.appendChild(mappingRowEl(pm)); });
+				var addMappingBtn = el('button', {
+					type: 'button',
+					className: 'btn btn-ghost btn-xs mt-1 self-start gap-1 text-xs',
+					innerHTML: SVG_PLUS + ' Add mapping',
+				});
+				addMappingBtn.onclick = function () { cfgAddMapping(addMappingBtn); };
 
-				return (
-					'<div class="instance-block border border-base-300 rounded-xl p-4 bg-base-100 space-y-3" data-type="' + type + '">' +
-						// Header row
-						'<div class="flex items-center justify-between gap-2">' +
-							'<div class="flex items-center gap-2 min-w-0">' +
-								typeSelect +
-								'<span class="text-xs font-semibold opacity-50 truncate field-name-label">' + label + '</span>' +
-							'</div>' +
-							'<button type="button" class="btn btn-ghost btn-xs text-error shrink-0" onclick="cfgDelInstance(this)" title="Delete this instance">' + SVG_TRASH + '</button>' +
-						'</div>' +
-						// Fields grid
-						'<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">' +
-							'<div class="flex flex-col gap-1">' +
-								'<label class="text-xs font-semibold opacity-60">Name</label>' +
-								'<input type="text" class="input input-bordered input-sm field-name' + lockCss + '" value="' + esc(name) + '" placeholder="My instance" ' + locked + ' oninput="cfgUpdateNameLabel(this)"/>' +
-							'</div>' +
-							'<div class="flex flex-col gap-1">' +
-								'<label class="text-xs font-semibold opacity-60">URL</label>' +
-								'<input type="text" class="input input-bordered input-sm field-url font-mono" value="' + esc(url) + '" placeholder="http://localhost:7878"/>' +
-							'</div>' +
-							secretHTML +
-						'</div>' +
-						// Path mappings
-						'<div class="flex flex-col gap-1.5 mt-2">' +
-							'<label class="text-xs font-semibold opacity-60">Path Mappings</label>' +
-							'<div class="space-y-2 path-mappings-container">' + mappingsHTML + '</div>' +
-							'<button type="button" class="btn btn-ghost btn-xs mt-1 self-start gap-1 text-xs" onclick="cfgAddMapping(this)">' +
-								SVG_PLUS + ' Add mapping' +
-							'</button>' +
-						'</div>' +
-					'</div>'
-				);
+				var pmSection = el('div', { className: 'flex flex-col gap-1.5 mt-2' }, [
+					el('label', { className: 'text-xs font-semibold opacity-60', textContent: 'Path Mappings' }),
+					pmContainer,
+					addMappingBtn,
+				]);
+
+				return el('div', {
+					className: 'instance-block border border-base-300 rounded-xl p-4 bg-base-100 space-y-3',
+					dataset: { type: type },
+				}, [header, grid, pmSection]);
 			}
 
 			// ── Tab Switching ───────────────────────────────────────────────────────────
@@ -540,9 +588,7 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					: type === 'sonarr' ? 'cfg-shows-container'
 					: 'cfg-torrent-container';
 				var container = document.getElementById(containerId);
-				var wrapper   = document.createElement('div');
-				wrapper.innerHTML = instanceHTML(type, {});
-				container.appendChild(wrapper.firstElementChild);
+				container.appendChild(instanceEl(type, {}));
 			};
 
 			window.cfgDelInstance = function (btn) {
@@ -555,9 +601,7 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 			// ── Add / Delete Path Mapping ───────────────────────────────────────────────
 			window.cfgAddMapping = function (btn) {
 				var container = btn.closest('.instance-block').querySelector('.path-mappings-container');
-				var wrapper   = document.createElement('div');
-				wrapper.innerHTML = mappingRowHTML({});
-				container.appendChild(wrapper.firstElementChild);
+				container.appendChild(mappingRowEl({}));
 			};
 
 	window.cfgDelMapping = function (btn) {
@@ -820,9 +864,7 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					var container = document.getElementById(containerId);
 					container.innerHTML = '';
 					(items || []).forEach(function (inst) {
-						var wrapper = document.createElement('div');
-						wrapper.innerHTML = instanceHTML(type, inst);
-						container.appendChild(wrapper.firstElementChild);
+						container.appendChild(instanceEl(type, inst));
 					});
 				}
 
