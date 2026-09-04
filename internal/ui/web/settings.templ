@@ -430,10 +430,6 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				var typeSelect = el('select', { className: 'select select-bordered select-xs field-type', title: 'Service type' }, [
 					el('option', { value: type, selected: true, textContent: type }),
 				]);
-				var nameLabel = el('span', {
-					className: 'text-xs font-semibold opacity-50 truncate field-name-label',
-					textContent: name || 'New instance',
-				});
 				var delInstanceBtn = el('button', {
 					type: 'button',
 					className: 'btn btn-ghost btn-xs text-error shrink-0',
@@ -443,7 +439,7 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				delInstanceBtn.onclick = function () { cfgDelInstance(delInstanceBtn); };
 
 				var header = el('div', { className: 'flex items-center justify-between gap-2' }, [
-					el('div', { className: 'flex items-center gap-2 min-w-0' }, [typeSelect, nameLabel]),
+					el('div', { className: 'flex items-center gap-2 min-w-0' }, [typeSelect]),
 					delInstanceBtn,
 				]);
 
