@@ -378,3 +378,75 @@ func TestWebRouter_Dashboard_And_Filters(t *testing.T) {
 		assert.Contains(t, body, "order=desc") // Next sort toggle link
 	})
 }
+
+func TestRouter_OptimizeRoutes(t *testing.T) {
+	database, err := db.Open(":memory:")
+	assert.NoError(t, err)
+	defer func() { _ = database.Close() }()
+
+	err = database.UpsertUser("admin", "secret")
+	assert.NoError(t, err)
+	token := "test-session-token"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	assert.NoError(t, err)
+	sessionCookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	// Insert test media file
+	m := db.MediaFileRecord{
+		ArrInstance:  "sonarr-1",
+		ArrType:      "sonarr",
+		ItemID:       10,
+		FileID:       101,
+		Title:        "Test Series",
+		Path:         "/media/test.mkv",
+		SeasonNumber: 1,
+		Inode:        12345,
+		Size:         5000,
+	}
+	assert.NoError(t, database.UpsertMediaFile(m))
+
+	router := NewRouter(database, nil, false)
+
+	// 1. Legacy /optimize/{instance}/{id} redirect
+	t.Run("Legacy optimize redirects to /optimize/files/", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/optimize/sonarr-1/101?search=1", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusMovedPermanently, w.Code)
+		assert.Equal(t, "/optimize/files/sonarr-1/101?search=1", w.Header().Get("Location"))
+	})
+
+	// 2. /optimize/files/{instance}/{id}
+	t.Run("Optimize files page renders", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/optimize/files/sonarr-1/101", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "Test Series")
+		assert.Contains(t, w.Body.String(), "Optimization Detail")
+	})
+
+	// 3. /optimize/shows/{instance}/{seriesId} without Sonarr -> 404
+	t.Run("Optimize show without Sonarr returns 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/optimize/shows/sonarr-1/10", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	// 4. /shows/{instance}/{seriesId} without Sonarr -> 404
+	t.Run("Shows detail without Sonarr returns 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/shows/sonarr-1/10", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+}

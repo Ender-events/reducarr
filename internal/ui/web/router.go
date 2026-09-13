@@ -574,8 +574,19 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		}
 	})
 
-	// Optimization Page
+	// Optimization Page (Legacy redirect to /optimize/files/{instance}/{id})
 	mux.HandleFunc("GET /optimize/{instance}/{id}", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		id := r.PathValue("id")
+		target := fmt.Sprintf("/optimize/files/%s/%s", instance, id)
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
+
+	// Single File Optimization Page
+	mux.HandleFunc("GET /optimize/files/{instance}/{id}", func(w http.ResponseWriter, r *http.Request) {
 		instance := r.PathValue("instance")
 		idStr := r.PathValue("id")
 		id64, _ := strconv.ParseInt(idStr, 10, 32)
@@ -599,6 +610,162 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		layoutOpts := buildLayoutOptions(r.Context(), database, getClient())
 		if err := OptimizationPage(getUser(r), *media, torrents, autoSearch, layoutOpts).Render(r.Context(), w); err != nil {
 			vlog("Failed to render optimization page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Complete Show Optimization Page
+	mux.HandleFunc("GET /optimize/shows/{instance}/{seriesId}", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		seriesIdStr := r.PathValue("seriesId")
+		seriesId64, _ := strconv.ParseInt(seriesIdStr, 10, 32)
+		seriesId := int32(seriesId64)
+
+		vlog("Accessing Show Optimization page for: %s:%d", instance, seriesId)
+
+		if refPath := getRedirectPath(r.Referer()); refPath != "" {
+			setRedirectCookie(w, refPath)
+		}
+
+		client := getClient()
+		if client == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+		inst := client.FindSonarr(instance)
+		if inst == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+
+		series, err := inst.GetSeriesByID(r.Context(), seriesId)
+		if err != nil || series == nil {
+			vlog("Failed to fetch series %d: %v", seriesId, err)
+			http.Error(w, "Series not found in Sonarr", http.StatusNotFound)
+			return
+		}
+
+		files, _ := database.GetMediaFilesBySeries(instance, seriesId)
+		var totalSize int64
+		uniqTorrents := make(map[string]db.TorrentRecord)
+		for _, f := range files {
+			totalSize += f.Size
+			if f.Inode != 0 {
+				torrents, _ := database.GetTorrentsByInode(f.Inode)
+				for _, t := range torrents {
+					uniqTorrents[t.ClientName+":"+t.InfoHash] = t
+				}
+			}
+		}
+		var torrents []db.TorrentRecord
+		for _, t := range uniqTorrents {
+			torrents = append(torrents, t)
+		}
+
+		autoSearch := r.URL.Query().Get("search") == "1"
+		layoutOpts := buildLayoutOptions(r.Context(), database, client)
+		if err := OptimizationSeriesPage(getUser(r), series, instance, totalSize, len(files), torrents, autoSearch, layoutOpts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render series optimization page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Season Optimization Page
+	mux.HandleFunc("GET /optimize/shows/{instance}/{seriesId}/{seasonNum}", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		seriesIdStr := r.PathValue("seriesId")
+		seriesId64, _ := strconv.ParseInt(seriesIdStr, 10, 32)
+		seriesId := int32(seriesId64)
+		seasonNumStr := r.PathValue("seasonNum")
+		seasonNum64, _ := strconv.ParseInt(seasonNumStr, 10, 32)
+		seasonNum := int32(seasonNum64)
+
+		vlog("Accessing Season Optimization page for: %s:%d s%02d", instance, seriesId, seasonNum)
+
+		if refPath := getRedirectPath(r.Referer()); refPath != "" {
+			setRedirectCookie(w, refPath)
+		}
+
+		client := getClient()
+		if client == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+		inst := client.FindSonarr(instance)
+		if inst == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+
+		series, err := inst.GetSeriesByID(r.Context(), seriesId)
+		if err != nil || series == nil {
+			vlog("Failed to fetch series %d: %v", seriesId, err)
+			http.Error(w, "Series not found in Sonarr", http.StatusNotFound)
+			return
+		}
+
+		files, _ := database.GetMediaFilesBySeason(instance, seriesId, seasonNum)
+		var totalSize int64
+		uniqTorrents := make(map[string]db.TorrentRecord)
+		for _, f := range files {
+			totalSize += f.Size
+			if f.Inode != 0 {
+				torrents, _ := database.GetTorrentsByInode(f.Inode)
+				for _, t := range torrents {
+					uniqTorrents[t.ClientName+":"+t.InfoHash] = t
+				}
+			}
+		}
+		var torrents []db.TorrentRecord
+		for _, t := range uniqTorrents {
+			torrents = append(torrents, t)
+		}
+
+		autoSearch := r.URL.Query().Get("search") == "1"
+		layoutOpts := buildLayoutOptions(r.Context(), database, client)
+		if err := OptimizationSeasonPage(getUser(r), series, seasonNum, instance, totalSize, len(files), torrents, autoSearch, layoutOpts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render season optimization page: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Show Detail Page
+	mux.HandleFunc("GET /shows/{instance}/{seriesId}", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		seriesIdStr := r.PathValue("seriesId")
+		seriesId64, _ := strconv.ParseInt(seriesIdStr, 10, 32)
+		seriesId := int32(seriesId64)
+
+		client := getClient()
+		if client == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+		inst := client.FindSonarr(instance)
+		if inst == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+
+		series, err := inst.GetSeriesByID(r.Context(), seriesId)
+		if err != nil || series == nil {
+			vlog("Failed to fetch series %d: %v", seriesId, err)
+			http.Error(w, "Series not found in Sonarr", http.StatusNotFound)
+			return
+		}
+
+		seasonFiles := make(map[int32][]db.MediaFileRecord)
+		for _, season := range series.Seasons {
+			num := season.GetSeasonNumber()
+			files, err := database.GetMediaFilesBySeason(instance, seriesId, num)
+			if err == nil {
+				seasonFiles[num] = files
+			}
+		}
+
+		layoutOpts := buildLayoutOptions(r.Context(), database, client)
+		if err := SeriesPage(getUser(r), instance, series, seasonFiles, layoutOpts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render series page: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
 	})
@@ -1089,6 +1256,310 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		setToastCookie(w, toastMsg, "success")
 		w.Header().Set("HX-Redirect", redirectTo)
 		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"msg": "Release '%s' grabbed successfully!", "type": "success"}}`, targetRecord.Title))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Shows Search API
+	mux.HandleFunc("GET /api/search/shows", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("q")
+		if len(query) < 2 {
+			return
+		}
+		client := getClient()
+		if client == nil || len(client.Sonarr) == 0 {
+			http.Error(w, "No Sonarr instance configured", http.StatusBadRequest)
+			return
+		}
+
+		vlog("Searching Sonarr series for: %s", query)
+		var allResults []SeriesSearchResult
+		for _, inst := range client.Sonarr {
+			results, err := inst.LookupSeries(r.Context(), query)
+			if err != nil {
+				vlog("Error querying Sonarr %s: %v", inst.Name(), err)
+				continue
+			}
+			for _, s := range results {
+				if s.Id != nil && *s.Id > 0 {
+					allResults = append(allResults, SeriesSearchResult{
+						InstanceName: inst.Name(),
+						Series:       s,
+					})
+				}
+			}
+		}
+
+		if err := ShowSearchResults(getUser(r), allResults).Render(r.Context(), w); err != nil {
+			vlog("Failed to render show search results: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Complete Show Releases API
+	mux.HandleFunc("GET /api/shows/{instance}/{seriesId}/releases", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		seriesIdStr := r.PathValue("seriesId")
+		seriesId64, _ := strconv.ParseInt(seriesIdStr, 10, 32)
+		seriesId := int32(seriesId64)
+
+		client := getClient()
+		if client == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+		inst := client.FindSonarr(instance)
+		if inst == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+
+		vlog("Fetching complete series releases for: %s:%d", instance, seriesId)
+		releases, err := inst.ListReleases(r.Context(), nil, &seriesId, nil)
+		if err != nil {
+			vlog("Error fetching series releases: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		var releaseInfos []ReleaseInfo
+		for _, rl := range releases {
+			score := int32(0)
+			if rl.CustomFormatScore != nil {
+				score = *rl.CustomFormatScore
+			}
+			seeders := int32(0)
+			if rl.Seeders.Get() != nil {
+				seeders = *rl.Seeders.Get()
+			}
+			var size int64
+			if rl.Size != nil {
+				size = *rl.Size
+			}
+			var qualityName string
+			if rl.Quality.Quality != nil {
+				qualityName = arrs.GetString(rl.Quality.Quality.Name)
+			}
+			releaseInfos = append(releaseInfos, ReleaseInfo{
+				GUID:       arrs.GetString(rl.Guid),
+				Title:      arrs.GetString(rl.Title),
+				Size:       size,
+				Indexer:    arrs.GetString(rl.Indexer),
+				Seeders:    seeders,
+				Quality:    qualityName,
+				Score:      score,
+				Rejections: rl.Rejections,
+			})
+		}
+
+		sorting.Sort(releaseInfos)
+
+		if err := SeriesReleaseList(getUser(r), instance, seriesId, releaseInfos).Render(r.Context(), w); err != nil {
+			vlog("Failed to render series release list: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Season Releases API
+	mux.HandleFunc("GET /api/shows/{instance}/{seriesId}/{seasonNum}/releases", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		seriesIdStr := r.PathValue("seriesId")
+		seriesId64, _ := strconv.ParseInt(seriesIdStr, 10, 32)
+		seriesId := int32(seriesId64)
+		seasonNumStr := r.PathValue("seasonNum")
+		seasonNum64, _ := strconv.ParseInt(seasonNumStr, 10, 32)
+		seasonNum := int32(seasonNum64)
+
+		client := getClient()
+		if client == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+		inst := client.FindSonarr(instance)
+		if inst == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+
+		vlog("Fetching season releases for: %s:%d s%02d", instance, seriesId, seasonNum)
+		releases, err := inst.ListReleases(r.Context(), nil, &seriesId, &seasonNum)
+		if err != nil {
+			vlog("Error fetching season releases: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		var releaseInfos []ReleaseInfo
+		for _, rl := range releases {
+			score := int32(0)
+			if rl.CustomFormatScore != nil {
+				score = *rl.CustomFormatScore
+			}
+			seeders := int32(0)
+			if rl.Seeders.Get() != nil {
+				seeders = *rl.Seeders.Get()
+			}
+			var size int64
+			if rl.Size != nil {
+				size = *rl.Size
+			}
+			var qualityName string
+			if rl.Quality.Quality != nil {
+				qualityName = arrs.GetString(rl.Quality.Quality.Name)
+			}
+			releaseInfos = append(releaseInfos, ReleaseInfo{
+				GUID:       arrs.GetString(rl.Guid),
+				Title:      arrs.GetString(rl.Title),
+				Size:       size,
+				Indexer:    arrs.GetString(rl.Indexer),
+				Seeders:    seeders,
+				Quality:    qualityName,
+				Score:      score,
+				Rejections: rl.Rejections,
+			})
+		}
+
+		sorting.Sort(releaseInfos)
+
+		if err := SeasonReleaseList(getUser(r), instance, seriesId, seasonNum, releaseInfos).Render(r.Context(), w); err != nil {
+			vlog("Failed to render season release list: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
+	// Grab Complete Series
+	mux.HandleFunc("POST /api/shows/{instance}/{seriesId}/grab", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		seriesIdStr := r.PathValue("seriesId")
+		seriesId64, _ := strconv.ParseInt(seriesIdStr, 10, 32)
+		seriesId := int32(seriesId64)
+		guid := r.FormValue("guid")
+
+		if guid == "" {
+			http.Error(w, "Missing guid", http.StatusBadRequest)
+			return
+		}
+
+		client := getClient()
+		if client == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+		inst := client.FindSonarr(instance)
+		if inst == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+
+		releases, err := inst.ListReleases(r.Context(), nil, &seriesId, nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		var selected *sonarr.ReleaseResource
+		for i := range releases {
+			if arrs.GetString(releases[i].Guid) == guid {
+				selected = &releases[i]
+				break
+			}
+		}
+		if selected == nil {
+			http.Error(w, "Release not found", http.StatusNotFound)
+			return
+		}
+
+		series, err := inst.GetSeriesByID(r.Context(), seriesId)
+		if err != nil || series == nil {
+			http.Error(w, "Series not found", http.StatusNotFound)
+			return
+		}
+
+		orch := orchestrator.New(database, client, false, verbose)
+		if err := orch.UpgradeSeries(r.Context(), inst, series, selected); err != nil {
+			vlog("ERROR upgrading series: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		vlog("Successfully triggered complete series upgrade for: %s", series.GetTitle())
+		redirectTo := getAndClearRedirectCookie(w, r)
+		if redirectTo == "" {
+			redirectTo = fmt.Sprintf("/shows/%s/%d", instance, seriesId)
+		}
+		toastMsg := fmt.Sprintf("Show '%s' upgrade grabbed successfully!", series.GetTitle())
+		setToastCookie(w, toastMsg, "success")
+		w.Header().Set("HX-Redirect", redirectTo)
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"msg": "%s", "type": "success"}}`, toastMsg))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Grab Season
+	mux.HandleFunc("POST /api/shows/{instance}/{seriesId}/{seasonNum}/grab", func(w http.ResponseWriter, r *http.Request) {
+		instance := r.PathValue("instance")
+		seriesIdStr := r.PathValue("seriesId")
+		seriesId64, _ := strconv.ParseInt(seriesIdStr, 10, 32)
+		seriesId := int32(seriesId64)
+		seasonNumStr := r.PathValue("seasonNum")
+		seasonNum64, _ := strconv.ParseInt(seasonNumStr, 10, 32)
+		seasonNum := int32(seasonNum64)
+		guid := r.FormValue("guid")
+
+		if guid == "" {
+			http.Error(w, "Missing guid", http.StatusBadRequest)
+			return
+		}
+
+		client := getClient()
+		if client == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+		inst := client.FindSonarr(instance)
+		if inst == nil {
+			http.Error(w, "Sonarr instance not found", http.StatusNotFound)
+			return
+		}
+
+		releases, err := inst.ListReleases(r.Context(), nil, &seriesId, &seasonNum)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		var selected *sonarr.ReleaseResource
+		for i := range releases {
+			if arrs.GetString(releases[i].Guid) == guid {
+				selected = &releases[i]
+				break
+			}
+		}
+		if selected == nil {
+			http.Error(w, "Release not found", http.StatusNotFound)
+			return
+		}
+
+		series, err := inst.GetSeriesByID(r.Context(), seriesId)
+		if err != nil || series == nil {
+			http.Error(w, "Series not found", http.StatusNotFound)
+			return
+		}
+
+		orch := orchestrator.New(database, client, false, verbose)
+		if err := orch.UpgradeSeason(r.Context(), inst, series, seasonNum, selected); err != nil {
+			vlog("ERROR upgrading season: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		vlog("Successfully triggered season %02d upgrade for: %s", seasonNum, series.GetTitle())
+		redirectTo := getAndClearRedirectCookie(w, r)
+		if redirectTo == "" {
+			redirectTo = fmt.Sprintf("/shows/%s/%d", instance, seriesId)
+		}
+		toastMsg := fmt.Sprintf("Season %02d of '%s' upgrade grabbed successfully!", seasonNum, series.GetTitle())
+		setToastCookie(w, toastMsg, "success")
+		w.Header().Set("HX-Redirect", redirectTo)
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"msg": "%s", "type": "success"}}`, toastMsg))
 		w.WriteHeader(http.StatusOK)
 	})
 

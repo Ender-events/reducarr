@@ -73,7 +73,7 @@ Reducarr uses a simple YAML file for configuration. You can edit it through the 
 
 ```yaml
 sonarr:
-    - name: "Local Sonarr"
+    - name: "Sonarr-HD"
       url: "http://sonarr:8989"
       apiKey: "YOUR_API_KEY"
       pathMappings:
@@ -81,7 +81,7 @@ sonarr:
             local: "/media/tv"
 
 radarr:
-    - name: "Local Radarr"
+    - name: "Radarr-HD"
       url: "http://radarr:7878"
       apiKey: "YOUR_API_KEY"
 

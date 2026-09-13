@@ -367,6 +367,28 @@ func (d *DB) GetMediaFilesBySeason(arrInstance string, seriesID int32, seasonNum
 	return records, nil
 }
 
+func (d *DB) GetMediaFilesBySeries(arrInstance string, seriesID int32) ([]MediaFileRecord, error) {
+	rows, err := d.Query(`
+		SELECT arr_instance, arr_type, item_id, file_id, path, title, inode, size, duration, quality, season_number
+		FROM media_files
+		WHERE arr_instance = ? AND item_id = ?
+		ORDER BY season_number ASC, path ASC`, arrInstance, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var records []MediaFileRecord
+	for rows.Next() {
+		var r MediaFileRecord
+		if err := rows.Scan(&r.ArrInstance, &r.ArrType, &r.ItemID, &r.FileID, &r.Path, &r.Title, &r.Inode, &r.Size, &r.Duration, &r.Quality, &r.SeasonNumber); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, nil
+}
+
 func (d *DB) DeleteMediaFile(arrInstance string, fileID int32) error {
 	_, err := d.Exec("DELETE FROM media_files WHERE arr_instance = ? AND file_id = ?", arrInstance, fileID)
 	return err
