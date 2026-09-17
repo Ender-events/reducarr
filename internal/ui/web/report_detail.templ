@@ -84,14 +84,22 @@ templ ReportDetailPage(username string, r db.ReportRecord, opts LayoutOptions) {
 									<p class="font-mono text-xl font-bold">{ humanize.Bytes(uint64(r.TotalSizeAfter)) }</p>
 								</div>
 								<div class="space-y-1">
-									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-success">Net Saved</p>
-									<p class="font-mono text-xl font-bold text-success">
-										if r.ActionType == "UPGRADE" {
+									if r.ActionType == "UPGRADE" && r.TotalSizeAfter > r.TotalSizeBefore {
+										<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-warning">Net Added</p>
+										<p class="font-mono text-xl font-bold text-warning">
+											+{ humanize.Bytes(uint64(r.TotalSizeAfter - r.TotalSizeBefore)) }
+										</p>
+									} else if r.ActionType == "UPGRADE" {
+										<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-success">Net Saved</p>
+										<p class="font-mono text-xl font-bold text-success">
 											+{ humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter)) }
-										} else {
+										</p>
+									} else {
+										<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-success">Net Saved</p>
+										<p class="font-mono text-xl font-bold text-success">
 											+{ humanize.Bytes(uint64(r.TotalSizeBefore)) }
-										}
-									</p>
+										</p>
+									}
 								</div>
 							</div>
 						</div>

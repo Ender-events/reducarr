@@ -355,3 +355,15 @@ func (d *DB) GetTableCounts() (map[string]int64, error) {
 	}
 	return counts, nil
 }
+
+// CheckpointWAL runs PRAGMA wal_checkpoint(TRUNCATE) to flush and truncate the
+// WAL file into the main database file. It returns the number of WAL frames
+// total and the number of frames successfully checkpointed.
+func (d *DB) CheckpointWAL() (walFrames, checkpointedFrames int, err error) {
+	row := d.QueryRow("PRAGMA wal_checkpoint(TRUNCATE)")
+	var blocked int
+	if err = row.Scan(&blocked, &walFrames, &checkpointedFrames); err != nil {
+		return 0, 0, fmt.Errorf("wal_checkpoint: %w", err)
+	}
+	return walFrames, checkpointedFrames, nil
+}

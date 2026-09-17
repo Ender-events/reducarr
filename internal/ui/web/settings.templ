@@ -310,9 +310,12 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 							<!-- Hidden HTMX form — receives content string and POSTs to /api/config -->
 							<form
 								id="config-form"
+								method="POST"
+								action="/api/config"
 								hx-post="/api/config"
 								hx-target="#config-status"
 								hx-trigger="submit"
+								onsubmit="event.preventDefault();"
 								class="hidden"
 							>
 								<input type="hidden" name="content" id="config-content-hidden"/>
@@ -575,7 +578,12 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				});
 
 				document.getElementById('config-content-hidden').value = content;
-				document.getElementById('config-form').dispatchEvent(new Event('submit'));
+				var form = document.getElementById('config-form');
+				if (window.htmx) {
+					htmx.trigger(form, 'submit');
+				} else {
+					form.dispatchEvent(new Event('submit', { cancelable: true }));
+				}
 			};
 
 			// ── Add / Delete Instance ───────────────────────────────────────────────────

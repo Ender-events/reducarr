@@ -75,7 +75,11 @@ var reportsCmd = &cobra.Command{
 			for i, r := range reports {
 				saved := "n/a"
 				if r.ActionType == "UPGRADE" && r.TotalSizeAfter > 0 {
-					saved = humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter))
+					if r.TotalSizeBefore > r.TotalSizeAfter {
+						saved = humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter))
+					} else {
+						saved = "-" + humanize.Bytes(uint64(r.TotalSizeAfter-r.TotalSizeBefore))
+					}
 				} else if r.ActionType == "DELETE" {
 					saved = humanize.Bytes(uint64(r.TotalSizeBefore))
 				}
@@ -204,7 +208,11 @@ func showFullReport(r db.ReportRecord) {
 	fmt.Printf("%-15s %s\n", "Before:", humanize.Bytes(uint64(r.TotalSizeBefore)))
 	if r.ActionType == "UPGRADE" {
 		fmt.Printf("%-15s %s\n", "After:", humanize.Bytes(uint64(r.TotalSizeAfter)))
-		fmt.Printf("%-15s \033[32m%s\033[0m\n", "Net Saved:", humanize.Bytes(uint64(r.TotalSizeBefore-r.TotalSizeAfter)))
+		if r.TotalSizeBefore > r.TotalSizeAfter {
+			fmt.Printf("%-15s \033[32m%s\033[0m\n", "Net Saved:", humanize.Bytes(uint64(r.TotalSizeBefore-r.TotalSizeAfter)))
+		} else {
+			fmt.Printf("%-15s \033[31m%s\033[0m\n", "Net Added:", humanize.Bytes(uint64(r.TotalSizeAfter-r.TotalSizeBefore)))
+		}
 		fmt.Printf("%-15s %s\n", "New Release:", r.NewReleaseTitle)
 		fmt.Printf("%-15s %s\n", "Indexer:", r.NewIndexer)
 	} else {

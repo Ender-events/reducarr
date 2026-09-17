@@ -75,7 +75,11 @@ templ ReportItem(username string, r db.ReportRecord) {
 				<div class="font-mono text-right text-sm font-bold">
 					if r.Status == "SUCCESS" || r.Status == "WARNING" {
 						if r.ActionType == "UPGRADE" && r.TotalSizeAfter > 0 {
-							<span class="text-success">+{ humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter)) }</span>
+							if r.TotalSizeBefore > r.TotalSizeAfter {
+								<span class="text-success">+{ humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter)) }</span>
+							} else {
+								<span class="text-warning">-{ humanize.Bytes(uint64(r.TotalSizeAfter - r.TotalSizeBefore)) }</span>
+							}
 						} else if r.ActionType == "DELETE" {
 							<span class="text-success">+{ humanize.Bytes(uint64(r.TotalSizeBefore)) }</span>
 						} else {

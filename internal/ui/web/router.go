@@ -566,6 +566,32 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		}
 	})
 
+	// WAL Checkpoint API
+	mux.HandleFunc("POST /api/troubleshooting/wal-checkpoint", func(w http.ResponseWriter, r *http.Request) {
+		vlog("Executing WAL checkpoint")
+		cfg, _ := config.LoadConfig()
+		if !cfg.WebUI.EnableTroubleshooting {
+			http.NotFound(w, r)
+			return
+		}
+		walFrames, checkpointed, err := database.CheckpointWAL()
+		if err != nil {
+			vlog("Error running WAL checkpoint: %v", err)
+			http.Error(w, fmt.Sprintf("WAL checkpoint failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		setToastCookie(w, fmt.Sprintf("WAL checkpoint complete: %d/%d frames checkpointed", checkpointed, walFrames), "success")
+		counts, err := database.GetTableCounts()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := TroubleshootingTableList(counts).Render(r.Context(), w); err != nil {
+			vlog("Failed to render troubleshooting table list: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+	})
+
 	// Scan Status API for HTMX Live Polling
 	mux.HandleFunc("GET /api/scan/status", func(w http.ResponseWriter, r *http.Request) {
 		if err := ScanControls(globalScanManager.GetProgress()).Render(r.Context(), w); err != nil {

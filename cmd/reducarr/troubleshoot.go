@@ -113,10 +113,39 @@ func runClearAllTables(out, errOut io.Writer, dbPath string) {
 	}
 }
 
+var troubleshootWALCheckpointCmd = &cobra.Command{
+	Use:   "wal-checkpoint",
+	Short: "Flush and truncate the SQLite WAL file",
+	Long:  "Runs PRAGMA wal_checkpoint(TRUNCATE) to commit all WAL frames into the main database file and truncate the WAL.",
+	Run: func(cmd *cobra.Command, args []string) {
+		runWALCheckpoint(cmd.OutOrStdout(), cmd.ErrOrStderr(), troubleshootDbPath)
+	},
+}
+
+func runWALCheckpoint(out, errOut io.Writer, dbPath string) {
+	if dbPath == "" {
+		dbPath = "reducarr.db"
+	}
+	database, err := db.Open(dbPath)
+	if err != nil {
+		fmt.Fprintf(errOut, "Error opening database: %v\n", err)
+		return
+	}
+	defer db.Close(database)
+
+	walFrames, checkpointed, err := database.CheckpointWAL()
+	if err != nil {
+		fmt.Fprintf(errOut, "Error running WAL checkpoint: %v\n", err)
+		return
+	}
+	fmt.Fprintf(out, "WAL checkpoint complete: %d/%d frames checkpointed.\n", checkpointed, walFrames)
+}
+
 func init() {
 	troubleshootCmd.PersistentFlags().StringVar(&troubleshootDbPath, "db", "reducarr.db", "Path to database file")
 	troubleshootClearTableCmd.Flags().BoolVar(&troubleshootClearAll, "all", false, "Clear all database tables")
 
 	troubleshootCmd.AddCommand(troubleshootClearTableCmd)
+	troubleshootCmd.AddCommand(troubleshootWALCheckpointCmd)
 	rootCmd.AddCommand(troubleshootCmd)
 }
