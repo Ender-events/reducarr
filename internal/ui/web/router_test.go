@@ -107,6 +107,10 @@ func TestSetToastCookie(t *testing.T) {
 }
 
 func TestTroubleshootingRoutes(t *testing.T) {
+	t.Chdir(t.TempDir())
+	viper.Reset()
+	defer viper.Reset()
+
 	database, err := db.Open(":memory:")
 	assert.NoError(t, err)
 	defer func() { _ = database.Close() }()
@@ -144,7 +148,6 @@ func TestTroubleshootingRoutes(t *testing.T) {
 
 	// Enable troubleshooting via viper
 	viper.Set("webui.enableTroubleshooting", true)
-	defer viper.Reset()
 
 	// Check /settings when enabled
 	reqSettingsEnabled, _ := http.NewRequest("GET", "/settings", nil)
@@ -449,4 +452,61 @@ func TestRouter_OptimizeRoutes(t *testing.T) {
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
+}
+
+func TestSettingsPage_PreservesNonVisualOptions(t *testing.T) {
+	database, err := db.Open(":memory:")
+	assert.NoError(t, err)
+	defer func() { _ = database.Close() }()
+
+	err = database.UpsertUser("admin", "secret")
+	assert.NoError(t, err)
+	token := "test-settings-token"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	assert.NoError(t, err)
+	sessionCookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	router := NewRouter(database, nil, false)
+
+	configYAML := `scoring:
+    maxSize: "15GB"
+    maxRatio: "120MiB/min"
+    maxBitrate: "8000k"
+    minSeedDuration: "720h"
+webui:
+    pageSize: 50
+    enableTroubleshooting: true
+    radarrTargetSize: "4GB"
+    sonarrTargetSize: "2GB"
+automation:
+    autoUpgrade: true
+    customAutomationKey: "preserved"
+dryRun: true
+`
+
+	// Test POST /api/config
+	form := url.Values{}
+	form.Set("content", configYAML)
+	reqPost := httptest.NewRequest("POST", "/api/config", strings.NewReader(form.Encode()))
+	reqPost.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqPost.AddCookie(sessionCookie)
+	wPost := httptest.NewRecorder()
+	router.ServeHTTP(wPost, reqPost)
+
+	assert.Equal(t, http.StatusOK, wPost.Code)
+	assert.Contains(t, wPost.Body.String(), "Saved at")
+
+	// Test GET /settings renders the content in Ace editor preserving all non-visual options
+	reqGet := httptest.NewRequest("GET", "/settings", nil)
+	reqGet.AddCookie(sessionCookie)
+	wGet := httptest.NewRecorder()
+	router.ServeHTTP(wGet, reqGet)
+
+	assert.Equal(t, http.StatusOK, wGet.Code)
+	body := wGet.Body.String()
+	assert.Contains(t, body, "id=\"ace-editor\"")
+	assert.Contains(t, body, "enableTroubleshooting")
+	assert.Contains(t, body, "radarrTargetSize")
+	assert.Contains(t, body, "maxSize")
+	assert.Contains(t, body, "customAutomationKey")
 }

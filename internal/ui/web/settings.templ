@@ -355,6 +355,7 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 			// Stores the originally-parsed config object so unknown keys (e.g. rateLimit at
 			// root level) are preserved when re-serialising from the visual form.
 			var cfgOriginal = {};
+			var visualDirty = false;
 
 			// ── SVG snippets ────────────────────────────────────────────────────────────
 			var SVG_PLUS = '<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>';
@@ -512,10 +513,12 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					addMappingBtn,
 				]);
 
-				return el('div', {
+				var block = el('div', {
 					className: 'instance-block border border-base-300 rounded-xl p-4 bg-base-100 space-y-3',
 					dataset: { type: type },
 				}, [header, grid, pmSection]);
+				block._origInst = Object.assign({}, data);
+				return block;
 			}
 
 			// ── Tab Switching ───────────────────────────────────────────────────────────
@@ -533,6 +536,7 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 							var parsed = jsyaml.load(currentYAML) || {};
 							cfgOriginal = parsed;
 							cfgPopulate(cfgOriginal);
+							visualDirty = false;
 						} catch (err) {
 							console.warn('[reducarr] Syntax error in Expert YAML:', err);
 						}
@@ -548,8 +552,11 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					panelExpert.classList.remove('hidden');
 					btnExpert.className = 'px-3 py-1.5 bg-primary text-primary-content transition-colors text-xs font-bold';
 					btnVisual.className = 'px-3 py-1.5 bg-base-200 text-base-content/60 hover:bg-base-300 transition-colors text-xs font-bold';
-					// Sync Ace editor with current visual state
-					aceEditor.setValue(cfgBuildYAML(), -1);
+					// Sync Ace editor only if visual form was modified
+					if (visualDirty) {
+						aceEditor.setValue(cfgBuildYAML(), -1);
+						visualDirty = false;
+					}
 					aceEditor.resize();
 				}
 			};
@@ -562,11 +569,13 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					try {
 						cfgOriginal = jsyaml.load(content) || {};
 						cfgPopulate(cfgOriginal);
+						visualDirty = false;
 					} catch (e) {}
 				} else {
 					content = cfgBuildYAML();
 					// Keep Ace in sync
 					aceEditor.setValue(content, -1);
+					visualDirty = false;
 				}
 
 				// Lock all non-empty name inputs now that Save is clicked
@@ -593,12 +602,14 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					: 'cfg-torrent-container';
 				var container = document.getElementById(containerId);
 				container.appendChild(instanceEl(type, {}));
+				visualDirty = true;
 			};
 
 			window.cfgDelInstance = function (btn) {
 				var block = btn.closest('.instance-block');
 				if (block && confirm('Delete this instance?')) {
 					block.remove();
+					visualDirty = true;
 				}
 			};
 
@@ -606,35 +617,96 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 			window.cfgAddMapping = function (btn) {
 				var container = btn.closest('.instance-block').querySelector('.path-mappings-container');
 				container.appendChild(mappingRowEl({}));
+				visualDirty = true;
 			};
 
-	window.cfgDelMapping = function (btn) {
-		btn.closest('.path-mapping-row').remove();
-	};
+			window.cfgDelMapping = function (btn) {
+				btn.closest('.path-mapping-row').remove();
+				visualDirty = true;
+			};
 
-	// ── Toggle Secret (password ↔ text) ─────────────────────────────────────────
-	window.cfgToggleSecret = function (btn) {
-		var input = btn.closest('.join').querySelector('input');
-		input.type = input.type === 'password' ? 'text' : 'password';
-	};
+			// ── Toggle Secret (password ↔ text) ─────────────────────────────────────────
+			window.cfgToggleSecret = function (btn) {
+				var input = btn.closest('.join').querySelector('input');
+				input.type = input.type === 'password' ? 'text' : 'password';
+			};
 
-	// ── Update Name Label dynamically on input ──────────────────────────────────
-	window.cfgUpdateNameLabel = function (input) {
-		var val = input.value.trim();
-		var label = input.closest('.instance-block').querySelector('.field-name-label');
-		if (label) {
-			label.textContent = val || 'New instance';
-		}
-	};
+			// ── Update Name Label dynamically on input ──────────────────────────────────
+			window.cfgUpdateNameLabel = function (input) {
+				var val = input.value.trim();
+				var label = input.closest('.instance-block').querySelector('.field-name-label');
+				if (label) {
+					label.textContent = val || 'New instance';
+				}
+			};
 
-			// ── Custom YAML Serializer with double-quotes & clean formatting ─────────────
+			// ── YAML Serializer with clean formatting & preserving non-visual options ──
+			function q(v) {
+				if (v === null || v === undefined) return '""';
+				return JSON.stringify(String(v));
+			}
+
+			function serializeYAMLValue(val, indent) {
+				var spaces = ' '.repeat(indent);
+				if (val === null || val === undefined) return '""';
+				if (typeof val === 'string') return q(val);
+				if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+				if (Array.isArray(val)) {
+					if (val.length === 0) return '[]';
+					var lines = [];
+					val.forEach(function (item) {
+						if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+							var keys = Object.keys(item);
+							if (keys.length === 0) {
+								lines.push(spaces + '- {}');
+							} else {
+								var first = true;
+								keys.forEach(function (k) {
+									var v = item[k];
+									var pfx = first ? spaces + '- ' + k + ':' : spaces + '  ' + k + ':';
+									first = false;
+									if (v !== null && typeof v === 'object') {
+										lines.push(pfx);
+										lines.push(serializeYAMLValue(v, indent + 4));
+									} else {
+										lines.push(pfx + ' ' + serializeYAMLValue(v, 0));
+									}
+								});
+							}
+						} else {
+							lines.push(spaces + '- ' + serializeYAMLValue(item, indent + 2));
+						}
+					});
+					return lines.join('\n');
+				}
+				if (typeof val === 'object') {
+					var keys = Object.keys(val);
+					if (keys.length === 0) return '{}';
+					var lines = [];
+					keys.forEach(function (k) {
+						var v = val[k];
+						if (v !== null && typeof v === 'object') {
+							lines.push(spaces + k + ':');
+							lines.push(serializeYAMLValue(v, indent + 4));
+						} else {
+							lines.push(spaces + k + ': ' + serializeYAMLValue(v, 0));
+						}
+					});
+					return lines.join('\n');
+				}
+				return JSON.stringify(val);
+			}
+
+			function serializeProperty(key, val, indent) {
+				var spaces = ' '.repeat(indent);
+				if (val !== null && typeof val === 'object') {
+					return spaces + key + ':\n' + serializeYAMLValue(val, indent + 4);
+				}
+				return spaces + key + ': ' + serializeYAMLValue(val, 0);
+			}
+
 			function serializeConfigYAML(cfg) {
 				var lines = [];
-
-				function q(v) {
-					if (v === null || v === undefined) return '""';
-					return JSON.stringify(String(v));
-				}
 
 				// sonarr
 				if (cfg.sonarr && Array.isArray(cfg.sonarr) && cfg.sonarr.length > 0) {
@@ -650,6 +722,12 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 								lines.push('            local: ' + q(pm.local));
 							});
 						}
+						var knownInstKeys = ['name', 'url', 'apiKey', 'pathMappings'];
+						Object.keys(inst).forEach(function (k) {
+							if (knownInstKeys.indexOf(k) === -1 && inst[k] !== undefined) {
+								lines.push(serializeProperty(k, inst[k], 6));
+							}
+						});
 					});
 					lines.push('');
 				}
@@ -668,6 +746,12 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 								lines.push('            local: ' + q(pm.local));
 							});
 						}
+						var knownInstKeys = ['name', 'url', 'apiKey', 'pathMappings'];
+						Object.keys(inst).forEach(function (k) {
+							if (knownInstKeys.indexOf(k) === -1 && inst[k] !== undefined) {
+								lines.push(serializeProperty(k, inst[k], 6));
+							}
+						});
 					});
 					lines.push('');
 				}
@@ -688,6 +772,12 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 								lines.push('            local: ' + q(pm.local));
 							});
 						}
+						var knownQbtKeys = ['name', 'url', 'username', 'password', 'readOnly', 'pathMappings'];
+						Object.keys(inst).forEach(function (k) {
+							if (knownQbtKeys.indexOf(k) === -1 && inst[k] !== undefined) {
+								lines.push(serializeProperty(k, inst[k], 6));
+							}
+						});
 					});
 					lines.push('');
 				}
@@ -695,12 +785,18 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				// scoring
 				if (cfg.scoring && Object.keys(cfg.scoring).length > 0) {
 					var scLines = [];
+					var scKnown = ['maxRatio', 'minSeedDuration'];
 					if (cfg.scoring.maxRatio !== undefined && cfg.scoring.maxRatio !== '') {
 						scLines.push('    maxRatio: ' + q(cfg.scoring.maxRatio));
 					}
 					if (cfg.scoring.minSeedDuration !== undefined && cfg.scoring.minSeedDuration !== '') {
 						scLines.push('    minSeedDuration: ' + q(cfg.scoring.minSeedDuration));
 					}
+					Object.keys(cfg.scoring).forEach(function (k) {
+						if (scKnown.indexOf(k) === -1 && cfg.scoring[k] !== undefined && cfg.scoring[k] !== '') {
+							scLines.push(serializeProperty(k, cfg.scoring[k], 4));
+						}
+					});
 					if (scLines.length > 0) {
 						lines.push('scoring:');
 						lines = lines.concat(scLines);
@@ -711,12 +807,18 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				// webui
 				if (cfg.webui && Object.keys(cfg.webui).length > 0) {
 					var wuLines = [];
+					var wuKnown = ['pageSize', 'minRejectionSeverity'];
 					if (cfg.webui.pageSize !== undefined && cfg.webui.pageSize !== '') {
 						wuLines.push('    pageSize: ' + cfg.webui.pageSize);
 					}
 					if (cfg.webui.minRejectionSeverity !== undefined && cfg.webui.minRejectionSeverity !== '') {
 						wuLines.push('    minRejectionSeverity: ' + cfg.webui.minRejectionSeverity);
 					}
+					Object.keys(cfg.webui).forEach(function (k) {
+						if (wuKnown.indexOf(k) === -1 && cfg.webui[k] !== undefined) {
+							wuLines.push(serializeProperty(k, cfg.webui[k], 4));
+						}
+					});
 					if (wuLines.length > 0) {
 						lines.push('webui:');
 						lines = lines.concat(wuLines);
@@ -727,6 +829,7 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				// automation
 				if (cfg.automation && Object.keys(cfg.automation).length > 0) {
 					var auLines = [];
+					var auKnown = ['schedule', 'autoUpgrade', 'minSizeReduction', 'minSeeders', 'rateLimit'];
 					if (cfg.automation.schedule !== undefined && cfg.automation.schedule !== '') {
 						auLines.push('    schedule: ' + q(cfg.automation.schedule));
 					}
@@ -742,6 +845,11 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					if (cfg.automation.rateLimit !== undefined && cfg.automation.rateLimit !== '') {
 						auLines.push('    rateLimit: ' + cfg.automation.rateLimit);
 					}
+					Object.keys(cfg.automation).forEach(function (k) {
+						if (auKnown.indexOf(k) === -1 && cfg.automation[k] !== undefined) {
+							auLines.push(serializeProperty(k, cfg.automation[k], 4));
+						}
+					});
 					if (auLines.length > 0) {
 						lines.push('automation:');
 						lines = lines.concat(auLines);
@@ -749,18 +857,11 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 					}
 				}
 
-				// Other top-level properties (e.g. rateLimit, dryRun)
+				// Other top-level properties (e.g. rateLimit, dryRun, or custom sections)
 				var knownKeys = ['sonarr', 'radarr', 'qbittorrent', 'scoring', 'webui', 'automation'];
 				Object.keys(cfg).forEach(function (key) {
-					if (knownKeys.indexOf(key) === -1) {
-						var val = cfg[key];
-						if (typeof val === 'string') {
-							lines.push(key + ': ' + q(val));
-						} else if (typeof val === 'boolean' || typeof val === 'number') {
-							lines.push(key + ': ' + val);
-						} else {
-							lines.push(key + ': ' + JSON.stringify(val));
-						}
+					if (knownKeys.indexOf(key) === -1 && cfg[key] !== undefined) {
+						lines.push(serializeProperty(key, cfg[key], 0));
 					}
 				});
 
@@ -769,17 +870,15 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 
 			// ── Build YAML from the visual form ─────────────────────────────────────────
 			function cfgBuildYAML() {
-				// Clone original object so unknown root-level keys (e.g. rateLimit) are kept.
-				var out = {};
-				Object.keys(cfgOriginal).forEach(function (k) { out[k] = cfgOriginal[k]; });
+				// Clone original object so unknown root-level keys are kept.
+				var out = Object.assign({}, cfgOriginal);
 
 				function readInstances(containerId, isQbt) {
 					var blocks = document.querySelectorAll('#' + containerId + ' .instance-block');
 					return Array.prototype.map.call(blocks, function (b) {
-						var inst = {
-							name: b.querySelector('.field-name').value,
-							url:  b.querySelector('.field-url').value,
-						};
+						var inst = Object.assign({}, b._origInst || {});
+						inst.name = b.querySelector('.field-name').value;
+						inst.url  = b.querySelector('.field-url').value;
 						if (isQbt) {
 							inst.username = b.querySelector('.field-username').value;
 							inst.password = b.querySelector('.field-password').value;
@@ -796,6 +895,8 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 									local:  r.querySelector('.field-local').value,
 								};
 							});
+						} else {
+							delete inst.pathMappings;
 						}
 						return inst;
 					});
@@ -813,8 +914,8 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				var qbt = readInstances('cfg-torrent-container', true);
 				if (qbt.length > 0) { out.qbittorrent = qbt; } else { delete out.qbittorrent; }
 
-				// Scoring
-				var scoring = {};
+				// Scoring — preserve non-visual keys
+				var scoring = Object.assign({}, cfgOriginal.scoring || {});
 				var maxRatioVal   = document.getElementById('adv-scoring-maxRatio').value.trim();
 				var minSeedDurVal = document.getElementById('adv-scoring-minSeedDuration').value.trim();
 				if (maxRatioVal) {
@@ -822,40 +923,67 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 						maxRatioVal += 'MiB/min';
 					}
 					scoring.maxRatio = maxRatioVal;
+				} else {
+					delete scoring.maxRatio;
 				}
 				if (minSeedDurVal) {
 					if (!/h$/i.test(minSeedDurVal)) {
 						minSeedDurVal += 'h';
 					}
 					scoring.minSeedDuration = minSeedDurVal;
+				} else {
+					delete scoring.minSeedDuration;
 				}
 				if (Object.keys(scoring).length > 0) { out.scoring = scoring; } else { delete out.scoring; }
 
-				// WebUI
-				var webui = {};
+				// WebUI — preserve non-visual keys
+				var webui = Object.assign({}, cfgOriginal.webui || {});
 				var pageSize   = document.getElementById('adv-webui-pageSize').value.trim();
 				var minRejSev  = document.getElementById('adv-webui-minRejectionSeverity').value.trim();
-				if (pageSize)  webui.pageSize              = parseInt(pageSize, 10);
-				if (minRejSev) webui.minRejectionSeverity  = parseInt(minRejSev, 10);
+				if (pageSize) {
+					webui.pageSize = parseInt(pageSize, 10);
+				} else {
+					delete webui.pageSize;
+				}
+				if (minRejSev) {
+					webui.minRejectionSeverity = parseInt(minRejSev, 10);
+				} else {
+					delete webui.minRejectionSeverity;
+				}
 				if (Object.keys(webui).length > 0) { out.webui = webui; } else { delete out.webui; }
 
-				// Automation
-				var automation = {};
+				// Automation — preserve non-visual keys
+				var automation = Object.assign({}, cfgOriginal.automation || {});
 				var schedule      = document.getElementById('adv-automation-schedule').value.trim();
 				var minSizeRedVal = document.getElementById('adv-automation-minSizeReduction').value.trim();
 				var minSeeders    = document.getElementById('adv-automation-minSeeders').value.trim();
 				var autoRateLimit = document.getElementById('adv-automation-rateLimit').value.trim();
 				var autoUpgrade   = document.getElementById('adv-automation-autoUpgrade').checked;
-				if (schedule) automation.schedule = schedule;
+
+				if (schedule) {
+					automation.schedule = schedule;
+				} else {
+					delete automation.schedule;
+				}
 				automation.autoUpgrade = autoUpgrade;
 				if (minSizeRedVal) {
 					if (!/\%$/.test(minSizeRedVal)) {
 						minSizeRedVal += '%';
 					}
 					automation.minSizeReduction = minSizeRedVal;
+				} else {
+					delete automation.minSizeReduction;
 				}
-				if (minSeeders)    automation.minSeeders = parseInt(minSeeders, 10);
-				if (autoRateLimit) automation.rateLimit  = parseInt(autoRateLimit, 10);
+				if (minSeeders) {
+					automation.minSeeders = parseInt(minSeeders, 10);
+				} else {
+					delete automation.minSeeders;
+				}
+				if (autoRateLimit) {
+					automation.rateLimit = parseInt(autoRateLimit, 10);
+				} else {
+					delete automation.rateLimit;
+				}
 				if (Object.keys(automation).length > 0) { out.automation = automation; } else { delete out.automation; }
 
 				return serializeConfigYAML(out);
@@ -912,6 +1040,13 @@ templ SettingsPage(username string, configContent string, progress ScanProgress,
 				} catch (e) {
 					console.warn('[reducarr] Could not parse config.yaml:', e);
 					cfgOriginal = {};
+				}
+				visualDirty = false;
+
+				var panelVisual = document.getElementById('cfg-panel-visual');
+				if (panelVisual) {
+					panelVisual.addEventListener('input', function () { visualDirty = true; });
+					panelVisual.addEventListener('change', function () { visualDirty = true; });
 				}
 
 				// Trigger Service Health refresh after a config save
