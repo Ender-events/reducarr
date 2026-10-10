@@ -210,7 +210,7 @@ templ Layout(title string, username string, opts LayoutOptions) {
 			<div id="toast-container" class="toast toast-top toast-end z-50"></div>
 			<script>
 				function showToast(msg, type) {
-					var alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+					var alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : type === 'warning' ? 'alert-warning' : 'alert-info';
 					var toast = document.createElement('div');
 					toast.className = 'alert ' + alertClass + ' shadow-lg max-w-xs animate-in slide-in-from-top-2';
 					toast.innerHTML = '<span>' + msg + '</span>';

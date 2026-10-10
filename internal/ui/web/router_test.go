@@ -172,6 +172,16 @@ func TestTroubleshootingRoutes(t *testing.T) {
 	router.ServeHTTP(wClear, reqClear)
 	assert.Equal(t, http.StatusOK, wClear.Code)
 	assert.Contains(t, wClear.Body.String(), "Database Tables")
+	assert.Contains(t, wClear.Header().Get("HX-Trigger"), "showToast")
+
+	// Post wal-checkpoint when enabled
+	reqWal, _ := http.NewRequest("POST", "/api/troubleshooting/wal-checkpoint", nil)
+	reqWal.AddCookie(cookie)
+	wWal := httptest.NewRecorder()
+	router.ServeHTTP(wWal, reqWal)
+	assert.Equal(t, http.StatusOK, wWal.Code)
+	assert.Contains(t, wWal.Body.String(), "Database Tables")
+	assert.Contains(t, wWal.Header().Get("HX-Trigger"), "showToast")
 }
 
 func TestRouter_NilClientHandling(t *testing.T) {

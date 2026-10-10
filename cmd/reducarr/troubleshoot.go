@@ -133,9 +133,13 @@ func runWALCheckpoint(out, errOut io.Writer, dbPath string) {
 	}
 	defer db.Close(database)
 
-	walFrames, checkpointed, err := database.CheckpointWAL()
+	walFrames, checkpointed, blocked, err := database.CheckpointWAL()
 	if err != nil {
 		fmt.Fprintf(errOut, "Error running WAL checkpoint: %v\n", err)
+		return
+	}
+	if blocked {
+		fmt.Fprintf(out, "WAL checkpoint partial: %d/%d frames checkpointed (checkpoint blocked by concurrent transactions).\n", checkpointed, walFrames)
 		return
 	}
 	fmt.Fprintf(out, "WAL checkpoint complete: %d/%d frames checkpointed.\n", checkpointed, walFrames)

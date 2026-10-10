@@ -84,3 +84,20 @@ func TestTroubleshootCmd_ClearAllTables(t *testing.T) {
 	assert.True(t, strings.Contains(output, "scan_state") || strings.Contains(output, "cleared"))
 	assert.Empty(t, errBuf.String())
 }
+
+func TestTroubleshootCmd_WALCheckpoint(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	database, err := db.Open(dbPath)
+	require.NoError(t, err)
+	err = database.SetLastItemID("sonarr-1", "100")
+	require.NoError(t, err)
+	_ = database.Close()
+
+	var outBuf, errBuf bytes.Buffer
+	runWALCheckpoint(&outBuf, &errBuf, dbPath)
+
+	assert.Contains(t, outBuf.String(), "WAL checkpoint complete:")
+	assert.Empty(t, errBuf.String())
+}

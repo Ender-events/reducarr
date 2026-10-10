@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/dustin/go-humanize"
@@ -74,7 +75,7 @@ var reportsCmd = &cobra.Command{
 			items := make([]displayReport, len(reports)+1)
 			for i, r := range reports {
 				saved := "n/a"
-				if r.ActionType == "UPGRADE" && r.TotalSizeAfter > 0 {
+				if strings.Contains(r.ActionType, "UPGRADE") && r.TotalSizeAfter > 0 {
 					if r.TotalSizeBefore > r.TotalSizeAfter {
 						saved = humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter))
 					} else {
@@ -206,7 +207,7 @@ func showFullReport(r db.ReportRecord) {
 
 	fmt.Printf("\n\033[1mSpace Impact:\033[0m\n")
 	fmt.Printf("%-15s %s\n", "Before:", humanize.Bytes(uint64(r.TotalSizeBefore)))
-	if r.ActionType == "UPGRADE" {
+	if strings.Contains(r.ActionType, "UPGRADE") {
 		fmt.Printf("%-15s %s\n", "After:", humanize.Bytes(uint64(r.TotalSizeAfter)))
 		if r.TotalSizeBefore > r.TotalSizeAfter {
 			fmt.Printf("%-15s \033[32m%s\033[0m\n", "Net Saved:", humanize.Bytes(uint64(r.TotalSizeBefore-r.TotalSizeAfter)))

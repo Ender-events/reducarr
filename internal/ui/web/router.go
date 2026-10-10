@@ -541,11 +541,12 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			return
 		}
 		table := r.FormValue("table")
+		var toastMsg string
 		if table == "all" {
 			for _, t := range db.AllowedTables {
 				_, _ = database.ClearTable(t)
 			}
-			setToastCookie(w, "All database tables cleared successfully", "success")
+			toastMsg = "All database tables cleared successfully"
 		} else {
 			rows, err := database.ClearTable(table)
 			if err != nil {
@@ -553,8 +554,10 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 				http.Error(w, fmt.Sprintf("Failed to clear table %s: %v", table, err), http.StatusBadRequest)
 				return
 			}
-			setToastCookie(w, fmt.Sprintf("Table '%s' cleared (%d rows deleted)", table, rows), "success")
+			toastMsg = fmt.Sprintf("Table '%s' cleared (%d rows deleted)", table, rows)
 		}
+		setToastCookie(w, toastMsg, "success")
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"msg": "%s", "type": "success"}}`, toastMsg))
 		counts, err := database.GetTableCounts()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -574,13 +577,20 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 			http.NotFound(w, r)
 			return
 		}
-		walFrames, checkpointed, err := database.CheckpointWAL()
+		walFrames, checkpointed, blocked, err := database.CheckpointWAL()
 		if err != nil {
 			vlog("Error running WAL checkpoint: %v", err)
 			http.Error(w, fmt.Sprintf("WAL checkpoint failed: %v", err), http.StatusInternalServerError)
 			return
 		}
-		setToastCookie(w, fmt.Sprintf("WAL checkpoint complete: %d/%d frames checkpointed", checkpointed, walFrames), "success")
+		toastMsg := fmt.Sprintf("WAL checkpoint complete: %d/%d frames checkpointed", checkpointed, walFrames)
+		toastType := "success"
+		if blocked {
+			toastMsg = fmt.Sprintf("WAL checkpoint partial: %d/%d frames checkpointed (blocked by active transaction)", checkpointed, walFrames)
+			toastType = "warning"
+		}
+		setToastCookie(w, toastMsg, toastType)
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"msg": "%s", "type": "%s"}}`, toastMsg, toastType))
 		counts, err := database.GetTableCounts()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

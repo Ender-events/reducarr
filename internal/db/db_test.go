@@ -160,3 +160,64 @@ func TestDB_ClearTable(t *testing.T) {
 	_, err = d.ClearTable("non_existent_table; DROP TABLE users;")
 	assert.Error(t, err)
 }
+
+func TestDB_GetDashboardStats_UpgradeTypes(t *testing.T) {
+	d, err := Open(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = d.Close() }()
+
+	// Normal UPGRADE: 10GB -> 4GB = 6GB saved
+	require.NoError(t, d.InsertReport(ReportRecord{
+		ActionType:      "UPGRADE",
+		ItemTitle:       "Movie 1",
+		Status:          "SUCCESS",
+		TotalSizeBefore: 10 * 1024 * 1024 * 1024,
+		TotalSizeAfter:  4 * 1024 * 1024 * 1024,
+	}))
+
+	// SEASON_UPGRADE: 20GB -> 15GB = 5GB saved
+	require.NoError(t, d.InsertReport(ReportRecord{
+		ActionType:      "SEASON_UPGRADE",
+		ItemTitle:       "Show S01",
+		Status:          "SUCCESS",
+		TotalSizeBefore: 20 * 1024 * 1024 * 1024,
+		TotalSizeAfter:  15 * 1024 * 1024 * 1024,
+	}))
+
+	// SERIES_UPGRADE: 50GB -> 35GB = 15GB saved
+	require.NoError(t, d.InsertReport(ReportRecord{
+		ActionType:      "SERIES_UPGRADE",
+		ItemTitle:       "Complete Show",
+		Status:          "SUCCESS",
+		TotalSizeBefore: 50 * 1024 * 1024 * 1024,
+		TotalSizeAfter:  35 * 1024 * 1024 * 1024,
+	}))
+
+	// DELETE: 8GB saved
+	require.NoError(t, d.InsertReport(ReportRecord{
+		ActionType:      "DELETE",
+		ItemTitle:       "Deleted Movie",
+		Status:          "SUCCESS",
+		TotalSizeBefore: 8 * 1024 * 1024 * 1024,
+	}))
+
+	stats, err := d.GetDashboardStats()
+	require.NoError(t, err)
+	// Expected: 6GB + 5GB + 15GB + 8GB = 34GB
+	expectedSaved := int64(34 * 1024 * 1024 * 1024)
+	assert.Equal(t, expectedSaved, stats.TotalSpaceSaved)
+}
+
+func TestDB_CheckpointWAL(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := tmpDir + "/test_wal.db"
+	d, err := Open(dbPath)
+	require.NoError(t, err)
+	defer func() { _ = d.Close() }()
+
+	walFrames, checkpointed, blocked, err := d.CheckpointWAL()
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, walFrames, 0)
+	assert.GreaterOrEqual(t, checkpointed, 0)
+	assert.False(t, blocked)
+}

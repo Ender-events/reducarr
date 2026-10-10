@@ -114,7 +114,7 @@ func (d *DB) GetReportsAdvanced(filter ReportFilter) ([]ReportRecord, error) {
 			CASE
 				WHEN status IN ('SUCCESS', 'WARNING') THEN
 					CASE
-						WHEN action_type = 'UPGRADE' AND total_size_after > 0 THEN (total_size_before - total_size_after)
+						WHEN action_type LIKE '%UPGRADE%' AND total_size_after > 0 THEN (total_size_before - total_size_after)
 						WHEN action_type = 'DELETE' THEN total_size_before
 						ELSE 0
 					END

@@ -160,7 +160,7 @@ func (d *DB) GetDashboardStats() (DashboardStats, error) {
 	err := d.QueryRow(`
 		SELECT COALESCE(SUM(
 			CASE
-				WHEN action_type = 'UPGRADE' THEN total_size_before - total_size_after
+				WHEN action_type LIKE '%UPGRADE%' THEN total_size_before - total_size_after
 				WHEN action_type = 'DELETE' THEN total_size_before
 				ELSE 0
 			END), 0)
@@ -358,12 +358,13 @@ func (d *DB) GetTableCounts() (map[string]int64, error) {
 
 // CheckpointWAL runs PRAGMA wal_checkpoint(TRUNCATE) to flush and truncate the
 // WAL file into the main database file. It returns the number of WAL frames
-// total and the number of frames successfully checkpointed.
-func (d *DB) CheckpointWAL() (walFrames, checkpointedFrames int, err error) {
+// total, the number of frames successfully checkpointed, and whether the checkpoint
+// was blocked by concurrent readers or writers.
+func (d *DB) CheckpointWAL() (walFrames, checkpointedFrames int, blocked bool, err error) {
 	row := d.QueryRow("PRAGMA wal_checkpoint(TRUNCATE)")
-	var blocked int
-	if err = row.Scan(&blocked, &walFrames, &checkpointedFrames); err != nil {
-		return 0, 0, fmt.Errorf("wal_checkpoint: %w", err)
+	var busy int
+	if err = row.Scan(&busy, &walFrames, &checkpointedFrames); err != nil {
+		return 0, 0, false, fmt.Errorf("wal_checkpoint: %w", err)
 	}
-	return walFrames, checkpointedFrames, nil
+	return walFrames, checkpointedFrames, busy != 0, nil
 }
