@@ -150,5 +150,6 @@ func TestDB_Reports_FilteringAndRead(t *testing.T) {
 		assert.Contains(t, actions, "UPGRADE")
 		assert.Contains(t, actions, "DELETE")
 		assert.Contains(t, actions, "SEASON_UPGRADE")
+		assert.Contains(t, actions, "SERIES_UPGRADE")
 	})
 }

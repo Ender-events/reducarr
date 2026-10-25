@@ -196,7 +196,7 @@ func (d *DB) GetDistinctReportActions() ([]string, error) {
 			actionSet[a] = true
 		}
 	}
-	for _, def := range []string{"UPGRADE", "DELETE"} {
+	for _, def := range []string{"UPGRADE", "DELETE", "SEASON_UPGRADE", "SERIES_UPGRADE"} {
 		if !actionSet[def] {
 			actions = append(actions, def)
 			actionSet[def] = true

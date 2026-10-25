@@ -111,7 +111,9 @@ templ ReleaseItem(username string, r ReleaseInfo, instance string, fileID int32)
 					hx-post={ fmt.Sprintf("/api/candidates/%s/%d/grab", instance, fileID) }
 					hx-vals={ fmt.Sprintf(`{"guid": "%s"}`, r.GUID) }
 					hx-confirm="Trigger upgrade to this release?"
+					hx-disabled-elt="this"
 				>
+					<span class="loading loading-spinner loading-xs htmx-indicator mr-1"></span>
 					Grab
 				</button>
 			</div>
@@ -297,7 +299,9 @@ templ SeasonReleaseItem(username string, r ReleaseInfo, instance string, seriesI
 					hx-post={ fmt.Sprintf("/api/shows/%s/%d/%d/grab", instance, seriesID, seasonNum) }
 					hx-vals={ fmt.Sprintf(`{"guid": "%s"}`, r.GUID) }
 					hx-confirm="Trigger replacement for this entire season?"
+					hx-disabled-elt="this"
 				>
+					<span class="loading loading-spinner loading-xs htmx-indicator mr-1"></span>
 					Grab Season
 				</button>
 			</div>
@@ -359,7 +363,9 @@ templ SeriesReleaseItem(username string, r ReleaseInfo, instance string, seriesI
 					hx-post={ fmt.Sprintf("/api/shows/%s/%d/grab", instance, seriesID) }
 					hx-vals={ fmt.Sprintf(`{"guid": "%s"}`, r.GUID) }
 					hx-confirm="Trigger replacement for this entire TV show?"
+					hx-disabled-elt="this"
 				>
+					<span class="loading loading-spinner loading-xs htmx-indicator mr-1"></span>
 					Grab Show
 				</button>
 			</div>

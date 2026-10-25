@@ -1243,7 +1243,16 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 		var err error
 		if targetRecord.ArrType == "radarr" {
 			inst := c.FindRadarr(instance)
-			releases, _ := inst.ListReleases(r.Context(), targetRecord.ItemID)
+			if inst == nil {
+				http.Error(w, fmt.Sprintf("Radarr instance '%s' not found", instance), http.StatusNotFound)
+				return
+			}
+			releases, listErr := inst.ListReleases(r.Context(), targetRecord.ItemID)
+			if listErr != nil {
+				vlog("ERROR listing releases: %v", listErr)
+				http.Error(w, listErr.Error(), http.StatusInternalServerError)
+				return
+			}
 			var selected *radarr.ReleaseResource
 			for i := range releases {
 				if arrs.GetStringRadarr(releases[i].Guid) == guid {
@@ -1251,12 +1260,23 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 					break
 				}
 			}
-			if selected != nil {
-				err = orch.UpgradeCandidate(r.Context(), *targetRecord, selected)
+			if selected == nil {
+				http.Error(w, "Release not found", http.StatusNotFound)
+				return
 			}
+			err = orch.UpgradeCandidate(r.Context(), *targetRecord, selected)
 		} else {
 			inst := c.FindSonarr(instance)
-			episodes, _ := inst.ListEpisodes(r.Context(), targetRecord.ItemID)
+			if inst == nil {
+				http.Error(w, fmt.Sprintf("Sonarr instance '%s' not found", instance), http.StatusNotFound)
+				return
+			}
+			episodes, listErr := inst.ListEpisodes(r.Context(), targetRecord.ItemID)
+			if listErr != nil {
+				vlog("ERROR listing episodes: %v", listErr)
+				http.Error(w, listErr.Error(), http.StatusInternalServerError)
+				return
+			}
 			var epID int32
 			for _, ep := range episodes {
 				if ep.EpisodeFileId != nil && *ep.EpisodeFileId == targetRecord.FileID {
@@ -1264,7 +1284,12 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 					break
 				}
 			}
-			releases, _ := inst.ListReleases(r.Context(), &epID, nil, nil)
+			releases, listRelErr := inst.ListReleases(r.Context(), &epID, nil, nil)
+			if listRelErr != nil {
+				vlog("ERROR listing releases: %v", listRelErr)
+				http.Error(w, listRelErr.Error(), http.StatusInternalServerError)
+				return
+			}
 			var selected *sonarr.ReleaseResource
 			for i := range releases {
 				if arrs.GetString(releases[i].Guid) == guid {
@@ -1272,9 +1297,11 @@ func NewRouter(database *db.DB, initialClient *arrs.Client, verbose bool) http.H
 					break
 				}
 			}
-			if selected != nil {
-				err = orch.UpgradeCandidate(r.Context(), *targetRecord, selected)
+			if selected == nil {
+				http.Error(w, "Release not found", http.StatusNotFound)
+				return
 			}
+			err = orch.UpgradeCandidate(r.Context(), *targetRecord, selected)
 		}
 
 		if err != nil {

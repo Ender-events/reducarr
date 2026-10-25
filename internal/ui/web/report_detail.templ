@@ -23,8 +23,8 @@ templ ReportDetailPage(username string, r db.ReportRecord, opts LayoutOptions) {
 					<div class="card bg-base-100 shadow-sm border border-base-300">
 						<div class="card-body p-8">
 							<div class="flex items-center justify-between mb-4">
-								<div class={ "badge font-black uppercase tracking-widest px-4 py-3", templ.KV("badge-primary", strings.Contains(r.ActionType, "UPGRADE")), templ.KV("badge-secondary", r.ActionType == "DELETE") }>
-									{ r.ActionType }
+								<div class={ "badge font-black uppercase tracking-widest px-4 py-3 truncate max-w-full", templ.KV("badge-primary", strings.Contains(r.ActionType, "UPGRADE")), templ.KV("badge-secondary", r.ActionType == "DELETE") } title={ formatAction(r.ActionType) }>
+									<span class="truncate">{ formatAction(r.ActionType) }</span>
 								</div>
 								<span class="font-mono text-sm opacity-50">{ r.CreatedAt }</span>
 							</div>

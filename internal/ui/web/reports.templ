@@ -39,9 +39,12 @@ templ ReportItem(username string, r db.ReportRecord) {
 				</div>
 			</div>
 			<!-- Action Badge -->
-			<div class="flex items-center">
-				<div class={ "badge badge-xs sm:badge-sm font-bold", templ.KV("badge-primary", strings.Contains(r.ActionType, "UPGRADE")), templ.KV("badge-secondary", r.ActionType == "DELETE") }>
-					{ r.ActionType }
+			<div class="flex items-center min-w-0">
+				<div
+					class={ "badge badge-xs sm:badge-sm font-bold truncate max-w-full", templ.KV("badge-primary", strings.Contains(r.ActionType, "UPGRADE")), templ.KV("badge-secondary", r.ActionType == "DELETE") }
+					title={ formatAction(r.ActionType) }
+				>
+					<span class="truncate">{ formatAction(r.ActionType) }</span>
 				</div>
 			</div>
 			<!-- Item Title & Path -->
@@ -168,7 +171,7 @@ templ ReportsPage(username string, reports []db.ReportRecord, currentStatus stri
 											href={ templ.SafeURL(reportFilterURL(currentStatus, act, currentSort, currentOrder)) }
 											class={ templ.KV("active font-bold", currentAction == act) }
 										>
-											{ act }
+											{ formatAction(act) }
 										</a>
 									</li>
 								}

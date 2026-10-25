@@ -164,8 +164,9 @@ templ SearchModal(title string, instance string, id int32, releases []ReleaseInf
 										hx-vals={ fmt.Sprintf(`{"guid": "%s"}`, r.GUID) }
 										hx-target={ "#" + safeID(instance, id) }
 										hx-swap="outerHTML"
-										hx-on:click="document.getElementById('search_modal').remove()"
+										hx-disabled-elt="this"
 									>
+										<span class="loading loading-spinner loading-xs htmx-indicator mr-1"></span>
 										Grab
 									</button>
 								</td>

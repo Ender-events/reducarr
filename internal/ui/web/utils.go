@@ -13,6 +13,16 @@ import (
 	"github.com/Ender-events/reducarr/pkg/arrs"
 )
 
+// FormatAction formats action types for user display (e.g., SEASON_UPGRADE -> SEASON UPGRADE).
+func FormatAction(action string) string {
+	return strings.ReplaceAll(action, "_", " ")
+}
+
+// formatAction is an alias for FormatAction for convenient use in templates.
+func formatAction(action string) string {
+	return FormatAction(action)
+}
+
 func safeID(instance string, id int32) string {
 	s := strings.ReplaceAll(instance, " ", "_")
 	return fmt.Sprintf("candidate-%s-%d", s, id)
