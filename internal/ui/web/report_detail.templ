@@ -1,6 +1,8 @@
 package web
 
 import (
+	"strings"
+
 	"github.com/Ender-events/reducarr/internal/db"
 	"github.com/dustin/go-humanize"
 )
@@ -21,8 +23,8 @@ templ ReportDetailPage(username string, r db.ReportRecord, opts LayoutOptions) {
 					<div class="card bg-base-100 shadow-sm border border-base-300">
 						<div class="card-body p-8">
 							<div class="flex items-center justify-between mb-4">
-								<div class={ "badge font-black uppercase tracking-widest px-4 py-3", templ.KV("badge-primary", r.ActionType == "UPGRADE"), templ.KV("badge-secondary", r.ActionType == "DELETE") }>
-									{ r.ActionType }
+								<div class={ "badge font-black uppercase tracking-widest px-4 py-3 truncate max-w-full", templ.KV("badge-primary", strings.Contains(r.ActionType, "UPGRADE")), templ.KV("badge-secondary", r.ActionType == "DELETE") } title={ formatAction(r.ActionType) }>
+									<span class="truncate">{ formatAction(r.ActionType) }</span>
 								</div>
 								<span class="font-mono text-sm opacity-50">{ r.CreatedAt }</span>
 							</div>
@@ -84,14 +86,22 @@ templ ReportDetailPage(username string, r db.ReportRecord, opts LayoutOptions) {
 									<p class="font-mono text-xl font-bold">{ humanize.Bytes(uint64(r.TotalSizeAfter)) }</p>
 								</div>
 								<div class="space-y-1">
-									<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-success">Net Saved</p>
-									<p class="font-mono text-xl font-bold text-success">
-										if r.ActionType == "UPGRADE" {
+									if strings.Contains(r.ActionType, "UPGRADE") && r.TotalSizeAfter > r.TotalSizeBefore {
+										<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-warning">Net Added</p>
+										<p class="font-mono text-xl font-bold text-warning">
+											+{ humanize.Bytes(uint64(r.TotalSizeAfter - r.TotalSizeBefore)) }
+										</p>
+									} else if strings.Contains(r.ActionType, "UPGRADE") {
+										<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-success">Net Saved</p>
+										<p class="font-mono text-xl font-bold text-success">
 											+{ humanize.Bytes(uint64(r.TotalSizeBefore - r.TotalSizeAfter)) }
-										} else {
+										</p>
+									} else {
+										<p class="text-[10px] uppercase font-black opacity-40 tracking-widest text-success">Net Saved</p>
+										<p class="font-mono text-xl font-bold text-success">
 											+{ humanize.Bytes(uint64(r.TotalSizeBefore)) }
-										}
-									</p>
+										</p>
+									}
 								</div>
 							</div>
 						</div>
@@ -100,7 +110,7 @@ templ ReportDetailPage(username string, r db.ReportRecord, opts LayoutOptions) {
 
 				<!-- Side Details -->
 				<div class="space-y-6">
-					if r.ActionType == "UPGRADE" && r.NewReleaseTitle != "" {
+					if strings.Contains(r.ActionType, "UPGRADE") && r.NewReleaseTitle != "" {
 						<div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
 							<div class="p-4 bg-base-200/50 border-b border-base-300 text-left">
 								<h2 class="card-title text-sm font-black uppercase tracking-widest opacity-40">New Version</h2>

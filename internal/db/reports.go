@@ -114,7 +114,7 @@ func (d *DB) GetReportsAdvanced(filter ReportFilter) ([]ReportRecord, error) {
 			CASE
 				WHEN status IN ('SUCCESS', 'WARNING') THEN
 					CASE
-						WHEN action_type = 'UPGRADE' AND total_size_after > 0 THEN (total_size_before - total_size_after)
+						WHEN action_type LIKE '%UPGRADE%' AND total_size_after > 0 THEN (total_size_before - total_size_after)
 						WHEN action_type = 'DELETE' THEN total_size_before
 						ELSE 0
 					END
@@ -196,7 +196,7 @@ func (d *DB) GetDistinctReportActions() ([]string, error) {
 			actionSet[a] = true
 		}
 	}
-	for _, def := range []string{"UPGRADE", "DELETE"} {
+	for _, def := range []string{"UPGRADE", "DELETE", "SEASON_UPGRADE", "SERIES_UPGRADE"} {
 		if !actionSet[def] {
 			actions = append(actions, def)
 			actionSet[def] = true

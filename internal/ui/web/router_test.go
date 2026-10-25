@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFormatAction(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"SEASON_UPGRADE", "SEASON UPGRADE"},
+		{"SERIES_UPGRADE", "SERIES UPGRADE"},
+		{"UPGRADE", "UPGRADE"},
+		{"DELETE", "DELETE"},
+		{"CUSTOM_ACTION_NAME", "CUSTOM ACTION NAME"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, FormatAction(tt.input))
+			assert.Equal(t, tt.expected, formatAction(tt.input))
+		})
+	}
+}
 
 func TestGetRedirectPath(t *testing.T) {
 	tests := []struct {
@@ -107,6 +129,10 @@ func TestSetToastCookie(t *testing.T) {
 }
 
 func TestTroubleshootingRoutes(t *testing.T) {
+	t.Chdir(t.TempDir())
+	viper.Reset()
+	defer viper.Reset()
+
 	database, err := db.Open(":memory:")
 	assert.NoError(t, err)
 	defer func() { _ = database.Close() }()
@@ -144,7 +170,6 @@ func TestTroubleshootingRoutes(t *testing.T) {
 
 	// Enable troubleshooting via viper
 	viper.Set("webui.enableTroubleshooting", true)
-	defer viper.Reset()
 
 	// Check /settings when enabled
 	reqSettingsEnabled, _ := http.NewRequest("GET", "/settings", nil)
@@ -169,6 +194,16 @@ func TestTroubleshootingRoutes(t *testing.T) {
 	router.ServeHTTP(wClear, reqClear)
 	assert.Equal(t, http.StatusOK, wClear.Code)
 	assert.Contains(t, wClear.Body.String(), "Database Tables")
+	assert.Contains(t, wClear.Header().Get("HX-Trigger"), "showToast")
+
+	// Post wal-checkpoint when enabled
+	reqWal, _ := http.NewRequest("POST", "/api/troubleshooting/wal-checkpoint", nil)
+	reqWal.AddCookie(cookie)
+	wWal := httptest.NewRecorder()
+	router.ServeHTTP(wWal, reqWal)
+	assert.Equal(t, http.StatusOK, wWal.Code)
+	assert.Contains(t, wWal.Body.String(), "Database Tables")
+	assert.Contains(t, wWal.Header().Get("HX-Trigger"), "showToast")
 }
 
 func TestRouter_NilClientHandling(t *testing.T) {
@@ -262,8 +297,24 @@ func TestWebRouter_Dashboard_And_Filters(t *testing.T) {
 
 	r1 := db.ReportRecord{ActionType: "UPGRADE", ItemTitle: "Movie Upgrade", Status: "SUCCESS"}
 	r2 := db.ReportRecord{ActionType: "UPGRADE", ItemTitle: "Failed Action", Status: "FAILED", ErrorMessage: "Error occurred", IsRead: false}
+	r3 := db.ReportRecord{
+		ActionType:      "SEASON_UPGRADE",
+		ItemTitle:       "Show - Season 1",
+		Status:          "SUCCESS",
+		TotalSizeBefore: 10000,
+		TotalSizeAfter:  4000,
+	}
+	r4 := db.ReportRecord{
+		ActionType:      "SERIES_UPGRADE",
+		ItemTitle:       "Complete Series",
+		Status:          "SUCCESS",
+		TotalSizeBefore: 20000,
+		TotalSizeAfter:  8000,
+	}
 	assert.NoError(t, database.InsertReport(r1))
 	assert.NoError(t, database.InsertReport(r2))
+	assert.NoError(t, database.InsertReport(r3))
+	assert.NoError(t, database.InsertReport(r4))
 
 	router := NewRouter(database, nil, false)
 
@@ -377,4 +428,269 @@ func TestWebRouter_Dashboard_And_Filters(t *testing.T) {
 		assert.Contains(t, body, "Failed Action")
 		assert.Contains(t, body, "order=desc") // Next sort toggle link
 	})
+
+	// Test GET /reports renders SEASON UPGRADE and SERIES UPGRADE with title and truncate
+	t.Run("GET /reports renders season and series upgrades with ellipsis badge and hover title", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/reports", nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, `title="SEASON UPGRADE"`)
+		assert.Contains(t, body, `title="SERIES UPGRADE"`)
+		assert.Contains(t, body, "SEASON UPGRADE")
+		assert.Contains(t, body, "SERIES UPGRADE")
+		assert.Contains(t, body, "truncate max-w-full")
+	})
+
+	// Test GET /reports/{id} renders season upgrade detail
+	t.Run("GET /reports/{id} renders season upgrade with title and net saved", func(t *testing.T) {
+		reports, err := database.GetReports(100, 0)
+		assert.NoError(t, err)
+		var seasonRepID int
+		for _, rep := range reports {
+			if rep.ActionType == "SEASON_UPGRADE" {
+				seasonRepID = rep.ID
+				break
+			}
+		}
+		require.NotZero(t, seasonRepID)
+
+		req := httptest.NewRequest("GET", fmt.Sprintf("/reports/%d", seasonRepID), nil)
+		req.AddCookie(&http.Cookie{Name: "reducarr_session", Value: token})
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		body := w.Body.String()
+		assert.Contains(t, body, `title="SEASON UPGRADE"`)
+		assert.Contains(t, body, "SEASON UPGRADE")
+		assert.Contains(t, body, "Net Saved")
+	})
+}
+
+func TestRouter_OptimizeRoutes(t *testing.T) {
+	database, err := db.Open(":memory:")
+	assert.NoError(t, err)
+	defer func() { _ = database.Close() }()
+
+	err = database.UpsertUser("admin", "secret")
+	assert.NoError(t, err)
+	token := "test-session-token"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	assert.NoError(t, err)
+	sessionCookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	// Insert test media file
+	m := db.MediaFileRecord{
+		ArrInstance:  "sonarr-1",
+		ArrType:      "sonarr",
+		ItemID:       10,
+		FileID:       101,
+		Title:        "Test Series",
+		Path:         "/media/test.mkv",
+		SeasonNumber: 1,
+		Inode:        12345,
+		Size:         5000,
+	}
+	assert.NoError(t, database.UpsertMediaFile(m))
+
+	router := NewRouter(database, nil, false)
+
+	// 1. Legacy /optimize/{instance}/{id} redirect
+	t.Run("Legacy optimize redirects to /optimize/files/", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/optimize/sonarr-1/101?search=1", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusMovedPermanently, w.Code)
+		assert.Equal(t, "/optimize/files/sonarr-1/101?search=1", w.Header().Get("Location"))
+	})
+
+	// 2. /optimize/files/{instance}/{id}
+	t.Run("Optimize files page renders", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/optimize/files/sonarr-1/101", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Contains(t, w.Body.String(), "Test Series")
+		assert.Contains(t, w.Body.String(), "Optimization Detail")
+	})
+
+	// 3. /optimize/shows/{instance}/{seriesId} without Sonarr -> 404
+	t.Run("Optimize show without Sonarr returns 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/optimize/shows/sonarr-1/10", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	// 4. /shows/{instance}/{seriesId} without Sonarr -> 404
+	t.Run("Shows detail without Sonarr returns 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/shows/sonarr-1/10", nil)
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+}
+
+func TestSettingsPage_PreservesNonVisualOptions(t *testing.T) {
+	database, err := db.Open(":memory:")
+	assert.NoError(t, err)
+	defer func() { _ = database.Close() }()
+
+	err = database.UpsertUser("admin", "secret")
+	assert.NoError(t, err)
+	token := "test-settings-token"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	assert.NoError(t, err)
+	sessionCookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	router := NewRouter(database, nil, false)
+
+	configYAML := `scoring:
+    maxSize: "15GB"
+    maxRatio: "120MiB/min"
+    maxBitrate: "8000k"
+    minSeedDuration: "720h"
+webui:
+    pageSize: 50
+    enableTroubleshooting: true
+    radarrTargetSize: "4GB"
+    sonarrTargetSize: "2GB"
+automation:
+    autoUpgrade: true
+    customAutomationKey: "preserved"
+dryRun: true
+`
+
+	// Test POST /api/config
+	form := url.Values{}
+	form.Set("content", configYAML)
+	reqPost := httptest.NewRequest("POST", "/api/config", strings.NewReader(form.Encode()))
+	reqPost.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqPost.AddCookie(sessionCookie)
+	wPost := httptest.NewRecorder()
+	router.ServeHTTP(wPost, reqPost)
+
+	assert.Equal(t, http.StatusOK, wPost.Code)
+	assert.Contains(t, wPost.Body.String(), "Saved at")
+
+	// Test GET /settings renders the content in Ace editor preserving all non-visual options
+	reqGet := httptest.NewRequest("GET", "/settings", nil)
+	reqGet.AddCookie(sessionCookie)
+	wGet := httptest.NewRecorder()
+	router.ServeHTTP(wGet, reqGet)
+
+	assert.Equal(t, http.StatusOK, wGet.Code)
+	body := wGet.Body.String()
+	assert.Contains(t, body, "id=\"ace-editor\"")
+	assert.Contains(t, body, "enableTroubleshooting")
+	assert.Contains(t, body, "radarrTargetSize")
+	assert.Contains(t, body, "maxSize")
+	assert.Contains(t, body, "customAutomationKey")
+}
+
+func TestGrabButtonsRenderSpinner(t *testing.T) {
+	rel := ReleaseInfo{
+		GUID:    "test-guid-123",
+		Title:   "Movie.2024.1080p",
+		Indexer: "Prowlarr",
+		Size:    1024 * 1024 * 1024,
+		Seeders: 10,
+		Quality: "1080p",
+		Score:   100,
+	}
+
+	t.Run("ReleaseItem has spinner", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		err := ReleaseItem("admin", rel, "radarr", 42).Render(context.Background(), buf)
+		require.NoError(t, err)
+		out := buf.String()
+		assert.Contains(t, out, "loading loading-spinner")
+		assert.Contains(t, out, "htmx-indicator")
+		assert.Contains(t, out, "hx-disabled-elt=\"this\"")
+		assert.Contains(t, out, "Grab")
+	})
+
+	t.Run("SeasonReleaseItem has spinner", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		err := SeasonReleaseItem("admin", rel, "sonarr", 10, 1).Render(context.Background(), buf)
+		require.NoError(t, err)
+		out := buf.String()
+		assert.Contains(t, out, "loading loading-spinner")
+		assert.Contains(t, out, "htmx-indicator")
+		assert.Contains(t, out, "hx-disabled-elt=\"this\"")
+		assert.Contains(t, out, "Grab Season")
+	})
+
+	t.Run("SeriesReleaseItem has spinner", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		err := SeriesReleaseItem("admin", rel, "sonarr", 10).Render(context.Background(), buf)
+		require.NoError(t, err)
+		out := buf.String()
+		assert.Contains(t, out, "loading loading-spinner")
+		assert.Contains(t, out, "htmx-indicator")
+		assert.Contains(t, out, "hx-disabled-elt=\"this\"")
+		assert.Contains(t, out, "Grab Show")
+	})
+
+	t.Run("SearchModal has spinner", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		err := SearchModal("Test Movie", "radarr", 42, []ReleaseInfo{rel}).Render(context.Background(), buf)
+		require.NoError(t, err)
+		out := buf.String()
+		assert.Contains(t, out, "loading loading-spinner")
+		assert.Contains(t, out, "htmx-indicator")
+		assert.Contains(t, out, "hx-disabled-elt=\"this\"")
+		assert.Contains(t, out, "Grab")
+	})
+}
+
+func TestLayoutRendersErrorToastHandler(t *testing.T) {
+	buf := new(bytes.Buffer)
+	err := Layout("Test Page", "admin", LayoutOptions{}).Render(context.Background(), buf)
+	require.NoError(t, err)
+	out := buf.String()
+	assert.Contains(t, out, "id=\"toast-container\"")
+	assert.Contains(t, out, "alert-error")
+	assert.Contains(t, out, "htmx:responseError")
+	assert.Contains(t, out, "htmx:sendError")
+}
+
+func TestGrabEndpointErrors(t *testing.T) {
+	database, err := db.Open(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = database.Close() }()
+
+	err = database.UpsertUser("admin", "secret")
+	require.NoError(t, err)
+	token := "grab-test-token"
+	err = database.CreateSession(token, "admin", time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	sessionCookie := &http.Cookie{Name: "reducarr_session", Value: token}
+
+	router := NewRouter(database, nil, false)
+
+	// Missing candidate / missing client should return error
+	form := url.Values{}
+	form.Set("guid", "some-guid")
+	req := httptest.NewRequest("POST", "/api/candidates/test/9999/grab", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookie)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	// Since client is nil, should return 500 "Client not initialized"
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "Client not initialized")
 }

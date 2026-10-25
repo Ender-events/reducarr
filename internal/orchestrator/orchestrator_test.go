@@ -1277,3 +1277,189 @@ func TestDeleteCandidate_StandardTorrentDeleteError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "delete torrent and files")
 }
+
+func TestUpgradeSeason_Success(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	downloadCalled := false
+	var downloadedRelease *sonarr.ReleaseResource
+
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, release *sonarr.ReleaseResource) error {
+		downloadCalled = true
+		downloadedRelease = release
+		return nil
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+
+	mockTorrent := NewMockTorrentInstance("test-torrent", false)
+	client.Torrents = append(client.Torrents, mockTorrent)
+
+	orch := New(database, client, false, false)
+
+	seriesTitle := "My Show"
+	seriesID := int32(10)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
+
+	// Insert files for season 1
+	m1 := db.MediaFileRecord{
+		ArrInstance:  "test-sonarr",
+		ArrType:      "sonarr",
+		ItemID:       seriesID,
+		FileID:       101,
+		Path:         "/shows/s01e01.mkv",
+		Title:        "My Show",
+		SeasonNumber: 1,
+		Inode:        555,
+		Size:         1000,
+	}
+	m2 := db.MediaFileRecord{
+		ArrInstance:  "test-sonarr",
+		ArrType:      "sonarr",
+		ItemID:       seriesID,
+		FileID:       102,
+		Path:         "/shows/s01e02.mkv",
+		Title:        "My Show",
+		SeasonNumber: 1,
+		Inode:        556,
+		Size:         1000,
+	}
+	require.NoError(t, database.UpsertMediaFile(m1))
+	require.NoError(t, database.UpsertMediaFile(m2))
+
+	// Torrent associated with season 1
+	_, err := database.Exec("INSERT INTO torrents (client_name, info_hash, file_path, inode, is_seeding, added_at) VALUES (?, ?, ?, ?, ?, ?)",
+		"test-torrent", "hash-season-1", "/shows/s01e01.mkv", 555, 1, 1000)
+	require.NoError(t, err)
+
+	relTitle := "My.Show.S01.1080p"
+	relIndexer := "IndexerA"
+	relSize := int64(3000)
+	release := &sonarr.ReleaseResource{
+		Title:   *sonarr.NewNullableString(&relTitle),
+		Indexer: *sonarr.NewNullableString(&relIndexer),
+		Size:    &relSize,
+	}
+
+	err = orch.UpgradeSeason(context.Background(), mockSonarr, series, 1, release)
+	require.NoError(t, err)
+	assert.True(t, downloadCalled)
+	assert.Equal(t, release, downloadedRelease)
+
+	// Verify reports
+	reports, err := database.GetReports(10, 0)
+	require.NoError(t, err)
+	require.Len(t, reports, 1)
+	assert.Equal(t, "SEASON_UPGRADE", reports[0].ActionType)
+	assert.Equal(t, "My Show - Season 01", reports[0].ItemTitle)
+	assert.Equal(t, "SUCCESS", reports[0].Status)
+	assert.Equal(t, int64(3000), reports[0].TotalSizeAfter)
+
+	// Files and torrents should be deleted from DB
+	filesAfter, err := database.GetMediaFilesBySeason("test-sonarr", seriesID, 1)
+	require.NoError(t, err)
+	assert.Empty(t, filesAfter)
+
+	torrentsAfter, err := database.GetTorrentsByInode(555)
+	require.NoError(t, err)
+	assert.Empty(t, torrentsAfter)
+}
+
+func TestUpgradeSeason_DryRun(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	downloadCalled := false
+
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, release *sonarr.ReleaseResource) error {
+		downloadCalled = true
+		return nil
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+
+	orch := New(database, client, true, false) // dry-run = true
+
+	seriesTitle := "My Show"
+	seriesID := int32(10)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
+
+	release := &sonarr.ReleaseResource{}
+	err := orch.UpgradeSeason(context.Background(), mockSonarr, series, 1, release)
+	require.NoError(t, err)
+	assert.False(t, downloadCalled, "DownloadRelease must not be called in dry-run mode")
+}
+
+func TestUpgradeSeries_Success(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	client := createTestClient()
+	downloadCalled := false
+
+	mockSonarr := NewMockSonarrInstance("test-sonarr", "test-api-key")
+	mockSonarr.downloadReleaseFunc = func(ctx context.Context, release *sonarr.ReleaseResource) error {
+		downloadCalled = true
+		return nil
+	}
+	client.Sonarr = append(client.Sonarr, mockSonarr)
+
+	mockTorrent := NewMockTorrentInstance("test-torrent", false)
+	client.Torrents = append(client.Torrents, mockTorrent)
+
+	orch := New(database, client, false, false)
+
+	seriesTitle := "Complete Show"
+	seriesID := int32(20)
+	series := &sonarr.SeriesResource{Title: *sonarr.NewNullableString(&seriesTitle), Id: &seriesID}
+
+	// Insert files across season 1 and season 2
+	m1 := db.MediaFileRecord{
+		ArrInstance:  "test-sonarr",
+		ArrType:      "sonarr",
+		ItemID:       seriesID,
+		FileID:       201,
+		Path:         "/shows/s01e01.mkv",
+		Title:        "Complete Show",
+		SeasonNumber: 1,
+		Inode:        701,
+		Size:         1000,
+	}
+	m2 := db.MediaFileRecord{
+		ArrInstance:  "test-sonarr",
+		ArrType:      "sonarr",
+		ItemID:       seriesID,
+		FileID:       202,
+		Path:         "/shows/s02e01.mkv",
+		Title:        "Complete Show",
+		SeasonNumber: 2,
+		Inode:        702,
+		Size:         1200,
+	}
+	require.NoError(t, database.UpsertMediaFile(m1))
+	require.NoError(t, database.UpsertMediaFile(m2))
+
+	relTitle := "Complete.Show.S01-S02.1080p"
+	release := &sonarr.ReleaseResource{
+		Title: *sonarr.NewNullableString(&relTitle),
+	}
+
+	err := orch.UpgradeSeries(context.Background(), mockSonarr, series, release)
+	require.NoError(t, err)
+	assert.True(t, downloadCalled)
+
+	// Verify report
+	reports, err := database.GetReports(10, 0)
+	require.NoError(t, err)
+	require.Len(t, reports, 1)
+	assert.Equal(t, "SERIES_UPGRADE", reports[0].ActionType)
+	assert.Equal(t, "Complete Show", reports[0].ItemTitle)
+
+	// All files of series should be deleted
+	filesAfter, err := database.GetMediaFilesBySeries("test-sonarr", seriesID)
+	require.NoError(t, err)
+	assert.Empty(t, filesAfter)
+}
