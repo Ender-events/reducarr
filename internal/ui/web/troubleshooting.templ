@@ -41,15 +41,25 @@ templ TroubleshootingTableList(counts map[string]int64) {
 	<div class="space-y-6">
 		<div class="flex items-center justify-between">
 			<h2 class="text-xl font-bold">Database Tables</h2>
-			<button
-				class="btn btn-error btn-sm"
-				hx-post="/api/troubleshooting/clear-table"
-				hx-vals='{"table": "all"}'
-				hx-target="#troubleshooting-container"
-				hx-confirm="Are you sure you want to clear ALL database tables?"
-			>
-				Clear All Tables
-			</button>
+			<div class="flex items-center gap-2">
+				<button
+					class="btn btn-outline btn-info btn-sm"
+					hx-post="/api/troubleshooting/wal-checkpoint"
+					hx-target="#troubleshooting-container"
+					hx-confirm="Run WAL checkpoint (TRUNCATE)? This flushes all WAL frames into the main DB file."
+				>
+					Checkpoint WAL
+				</button>
+				<button
+					class="btn btn-error btn-sm"
+					hx-post="/api/troubleshooting/clear-table"
+					hx-vals='{"table": "all"}'
+					hx-target="#troubleshooting-container"
+					hx-confirm="Are you sure you want to clear ALL database tables?"
+				>
+					Clear All Tables
+				</button>
+			</div>
 		</div>
 
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">

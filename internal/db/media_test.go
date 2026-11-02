@@ -276,3 +276,37 @@ func TestDB_Candidates_ShowIgnored(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, paginatedAll, 2)
 }
+
+func TestDB_GetMediaFilesBySeries(t *testing.T) {
+	d, err := Open(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = d.Close() }()
+
+	m1 := MediaFileRecord{ArrInstance: "Sonarr-1", ArrType: "sonarr", ItemID: 10, FileID: 1, Title: "Show A", SeasonNumber: 1, Path: "/path/s01e01.mkv", Size: 100}
+	m2 := MediaFileRecord{ArrInstance: "Sonarr-1", ArrType: "sonarr", ItemID: 10, FileID: 2, Title: "Show A", SeasonNumber: 1, Path: "/path/s01e02.mkv", Size: 100}
+	m3 := MediaFileRecord{ArrInstance: "Sonarr-1", ArrType: "sonarr", ItemID: 10, FileID: 3, Title: "Show A", SeasonNumber: 2, Path: "/path/s02e01.mkv", Size: 150}
+	m4 := MediaFileRecord{ArrInstance: "Sonarr-1", ArrType: "sonarr", ItemID: 20, FileID: 4, Title: "Show B", SeasonNumber: 1, Path: "/path/b_s01e01.mkv", Size: 200}
+
+	require.NoError(t, d.UpsertMediaFile(m1))
+	require.NoError(t, d.UpsertMediaFile(m2))
+	require.NoError(t, d.UpsertMediaFile(m3))
+	require.NoError(t, d.UpsertMediaFile(m4))
+
+	seriesFiles, err := d.GetMediaFilesBySeries("Sonarr-1", 10)
+	require.NoError(t, err)
+	assert.Len(t, seriesFiles, 3)
+	assert.Equal(t, int32(1), seriesFiles[0].FileID)
+	assert.Equal(t, int32(2), seriesFiles[1].FileID)
+	assert.Equal(t, int32(3), seriesFiles[2].FileID)
+
+	// Another series
+	bFiles, err := d.GetMediaFilesBySeries("Sonarr-1", 20)
+	require.NoError(t, err)
+	assert.Len(t, bFiles, 1)
+	assert.Equal(t, int32(4), bFiles[0].FileID)
+
+	// Non-existent
+	emptyFiles, err := d.GetMediaFilesBySeries("Sonarr-1", 999)
+	require.NoError(t, err)
+	assert.Empty(t, emptyFiles)
+}

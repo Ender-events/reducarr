@@ -43,9 +43,9 @@ templ Layout(title string, username string, opts LayoutOptions) {
 			<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 			<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.10" defer></script>
 			<style>
-				.htmx-indicator { display: none; }
-				.htmx-request .htmx-indicator { display: inline-block; }
-				.htmx-request.htmx-indicator { display: inline-block; }
+				.htmx-indicator { display: none !important; }
+				.htmx-request .htmx-indicator { display: inline-block !important; }
+				.htmx-request.htmx-indicator { display: inline-block !important; }
 			</style>
 		</head>
 		<body class="min-h-screen bg-base-200 text-base-content">
@@ -210,14 +210,21 @@ templ Layout(title string, username string, opts LayoutOptions) {
 			<div id="toast-container" class="toast toast-top toast-end z-50"></div>
 			<script>
 				function showToast(msg, type) {
-					var alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : 'alert-info';
+					var alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-error' : type === 'warning' ? 'alert-warning' : 'alert-info';
 					var toast = document.createElement('div');
-					toast.className = 'alert ' + alertClass + ' shadow-lg max-w-xs animate-in slide-in-from-top-2';
-					toast.innerHTML = '<span>' + msg + '</span>';
+					toast.className = 'alert ' + alertClass + ' shadow-lg max-w-sm animate-in slide-in-from-top-2 text-sm';
+					var icon = '';
+					if (type === 'error') {
+						icon = '<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+					} else if (type === 'success') {
+						icon = '<svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>';
+					}
+					toast.innerHTML = icon + '<span></span>';
+					toast.querySelector('span').textContent = msg;
 					var container = document.getElementById('toast-container');
 					if (container) {
 						container.appendChild(toast);
-						setTimeout(function() { toast.remove(); }, 4000);
+						setTimeout(function() { toast.remove(); }, 5000);
 					}
 				}
 
@@ -244,6 +251,34 @@ templ Layout(title string, username string, opts LayoutOptions) {
 				document.addEventListener('showToast', function(e) {
 					var detail = e.detail;
 					showToast((detail && detail.msg) || 'Notification', (detail && detail.type) || 'info');
+				});
+
+				document.addEventListener('htmx:responseError', function(e) {
+					var xhr = e.detail && e.detail.xhr;
+					if (xhr && xhr.getResponseHeader && xhr.getResponseHeader('HX-Trigger')) {
+						try {
+							var trigger = JSON.parse(xhr.getResponseHeader('HX-Trigger'));
+							if (trigger && trigger.showToast) {
+								return;
+							}
+						} catch (ignored) {}
+					}
+					var msg = 'An unexpected error occurred';
+					if (xhr) {
+						var text = (xhr.responseText || '').trim();
+						if (text && !text.startsWith('<')) {
+							msg = text;
+						} else if (xhr.statusText) {
+							msg = xhr.statusText;
+						} else if (xhr.status) {
+							msg = 'Error ' + xhr.status;
+						}
+					}
+					showToast(msg, 'error');
+				});
+
+				document.addEventListener('htmx:sendError', function(e) {
+					showToast('Network error, please check connection', 'error');
 				});
 			</script>
 		</body>

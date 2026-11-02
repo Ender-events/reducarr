@@ -115,6 +115,7 @@ func TestDB_Reports_FilteringAndRead(t *testing.T) {
 	t.Run("GetReportsAdvanced sorting by Net Saved", func(t *testing.T) {
 		// r1: UPGRADE, SUCCESS, Before 10GB, After 4GB -> Saved 6GB
 		// r4: DELETE, SUCCESS, Before 8GB -> Saved 8GB
+		// r5: SEASON_UPGRADE, SUCCESS, Before 20GB, After 10GB -> Saved 10GB
 		r4 := ReportRecord{
 			ActionType:      "DELETE",
 			ItemTitle:       "Large Movie",
@@ -123,6 +124,15 @@ func TestDB_Reports_FilteringAndRead(t *testing.T) {
 		}
 		require.NoError(t, d.InsertReport(r4))
 
+		r5 := ReportRecord{
+			ActionType:      "SEASON_UPGRADE",
+			ItemTitle:       "Big Season",
+			Status:          "SUCCESS",
+			TotalSizeBefore: 20 * 1024 * 1024 * 1024,
+			TotalSizeAfter:  10 * 1024 * 1024 * 1024,
+		}
+		require.NoError(t, d.InsertReport(r5))
+
 		reports, err := d.GetReportsAdvanced(ReportFilter{
 			SortBy:    "saved",
 			SortOrder: "desc",
@@ -130,7 +140,8 @@ func TestDB_Reports_FilteringAndRead(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotEmpty(t, reports)
-		assert.Equal(t, "Large Movie", reports[0].ItemTitle)
+		assert.Equal(t, "Big Season", reports[0].ItemTitle)
+		assert.Equal(t, "Large Movie", reports[1].ItemTitle)
 	})
 
 	t.Run("GetDistinctReportActions", func(t *testing.T) {
@@ -138,5 +149,7 @@ func TestDB_Reports_FilteringAndRead(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, actions, "UPGRADE")
 		assert.Contains(t, actions, "DELETE")
+		assert.Contains(t, actions, "SEASON_UPGRADE")
+		assert.Contains(t, actions, "SERIES_UPGRADE")
 	})
 }
