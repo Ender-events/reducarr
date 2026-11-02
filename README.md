@@ -102,7 +102,7 @@ rateLimit: 50 # Max searches per hour (not implemented yet)
 
 ## 🛠️ Tech Stack
 
-- **Backend**: Go 1.26.3
+- **Backend**: Go 1.26.8
 - **Frontend**: [Templ](https://templ.guide/), [HTMX 2.x](https://htmx.org/), [Tailwind CSS 4](https://tailwindcss.com/), [DaisyUI 5](https://daisyui.com/)
 - **Database**: SQLite (via `modernc.org/sqlite`)
 - **Container**: Multi-stage Docker build, `scratch` runtime.
